@@ -117,40 +117,76 @@
       margin-top: 10px;
     }
   </style>
-<!-- 教練評語與雲端資料庫區塊 -->
+<!-- 學員專用 - 評語顯示區 (唯讀) -->
 <div class="container" style="margin-top: 20px; background: #1e293b; padding: 20px; border-radius: 8px;">
-  <h2 style="color: #38bdf8; margin-top: 0;">教練分析與指導建議</h2>
+  <h2 style="color: #38bdf8; margin-top: 0;">📋 教練專屬指導建議</h2>
   
-  <div style="display: flex; gap: 15px; margin-bottom: 15px; flex-wrap: wrap;">
-    <label style="color: #f8fafc;">學員姓名/編號：
-      <input type="text" id="studentId" placeholder="例如：Student01" style="padding: 8px; border-radius: 4px; border: 1px solid #475569; background: #0f172a; color: #fff;">
-    </label>
-    <button id="loadFeedbackBtn" class="btn" style="background: #0284c7; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">載入評語</button>
+  <div style="display: flex; gap: 10px; margin-bottom: 20px; align-items: center;">
+    <label style="color: #fff; font-weight: bold;">請輸入您的學員編號：</label>
+    <input type="text" id="studentId" placeholder="例如：Student01" style="padding: 8px; border-radius: 4px; background: #0f172a; color: #fff; border: 1px solid #475569;">
+    <button id="loadFeedbackBtn" style="padding: 8px 16px; background: #0284c7; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">查詢分析報告</button>
   </div>
 
   <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
-    <div>
-      <label style="color: #38bdf8; font-weight: bold; display: block; margin-bottom: 5px;">髖關節 (Hip) 建議：</label>
-      <textarea id="hipNotes" rows="4" placeholder="輸入關於髖關節伸展、前傾角度的建議..." style="width: 100%; padding: 8px; border-radius: 4px; background: #0f172a; color: #fff; border: 1px solid #475569;"></textarea>
+    <div style="background: #0f172a; padding: 15px; border-radius: 6px; border-left: 4px solid #f43f5e;">
+      <h3 style="color: #f43f5e; margin-top: 0;">🦵 髖關節 (Hip) 建議</h3>
+      <div id="hipDisplay" style="color: #cbd5e1; white-space: pre-wrap; min-height: 60px;">尚未查詢數據...</div>
     </div>
-    <div>
-      <label style="color: #38bdf8; font-weight: bold; display: block; margin-bottom: 5px;">膝關節 (Knee) 建議：</label>
-      <textarea id="kneeNotes" rows="4" placeholder="輸入關於著地折膝、推離角度的建議..." style="width: 100%; padding: 8px; border-radius: 4px; background: #0f172a; color: #fff; border: 1px solid #475569;"></textarea>
+    <div style="background: #0f172a; padding: 15px; border-radius: 6px; border-left: 4px solid #eab308;">
+      <h3 style="color: #eab308; margin-top: 0;">🦵 膝關節 (Knee) 建議</h3>
+      <div id="kneeDisplay" style="color: #cbd5e1; white-space: pre-wrap; min-height: 60px;">尚未查詢數據...</div>
     </div>
-    <div>
-      <label style="color: #38bdf8; font-weight: bold; display: block; margin-bottom: 5px;">踝關節 (Ankle) 建議：</label>
-      <textarea id="ankleNotes" rows="4" placeholder="輸入關於腳掌推地、背屈角度的建議..." style="width: 100%; padding: 8px; border-radius: 4px; background: #0f172a; color: #fff; border: 1px solid #475569;"></textarea>
+    <div style="background: #0f172a; padding: 15px; border-radius: 6px; border-left: 4px solid #10b981;">
+      <h3 style="color: #10b981; margin-top: 0;">🦶 踝關節 (Ankle) 建議</h3>
+      <div id="ankleDisplay" style="color: #cbd5e1; white-space: pre-wrap; min-height: 60px;">尚未查詢數據...</div>
     </div>
   </div>
+</div>
 
-  <button id="saveFeedbackBtn" class="btn" style="margin-top: 15px; background: #16a34a; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: bold;">儲存指導建議至雲端</button>
-  <span id="saveStatus" style="margin-left: 10px; color: #4ade80;"></span>
-</div></head>
-<!-- 引入 Firebase SDK (ES Module) -->
+<!-- Firebase 唯讀邏輯 -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
+  const firebaseConfig = {
+    apiKey: "AIzaSyCYLu-RAIbAIN9PiPQNyKzyjv6s-nHs7uA",
+    authDomain: "running-analysis-db.firebaseapp.com",
+    databaseURL: "https://running-analysis-db-default-rtdb.firebaseio.com",
+    projectId: "running-analysis-db",
+    storageBucket: "running-analysis-db.firebasestorage.app",
+    messagingSenderId: "154182697495",
+    appId: "1:154182697495:web:fc92eb15e46bd025265252",
+    measurementId: "G-67BZPFQ1S7"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  const studentIdInput = document.getElementById("studentId");
+  const loadBtn = document.getElementById("loadFeedbackBtn");
+
+  loadBtn.addEventListener("click", async () => {
+    const studentId = studentIdInput.value.trim();
+    if (!studentId) {
+      alert("請輸入學員編號！");
+      return;
+    }
+
+    try {
+      const docSnap = await getDoc(doc(db, "coach_feedback", studentId));
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        document.getElementById("hipDisplay").textContent = data.hip || "無特定建議";
+        document.getElementById("kneeDisplay").textContent = data.knee || "無特定建議";
+        document.getElementById("ankleDisplay").textContent = data.ankle || "無特定建議";
+      } else {
+        alert("尚未找到該學員的教練分析報告。");
+      }
+    } catch (error) {
+      console.error("載入失敗：", error);
+    }
+  });
+</script>
   // 您專屬的 Firebase 設定
   const firebaseConfig = {
     apiKey: "AIzaSyCYLu-RAIbAIN9PiPQNyKzyjv6s-nHs7uA",

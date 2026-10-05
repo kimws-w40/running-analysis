@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>跑姿分析系統 - 教練管理後台</title>
+  <style>
+    body { font-family: sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; }
+    .container { max-width: 1000px; margin: 0 auto; background: #1e293b; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+    h1 { color: #38bdf8; border-bottom: 2px solid #334155; padding-bottom: 10px; }
+    .nav-bar { margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+    .nav-bar a { color: #38bdf8; text-decoration: none; font-size: 14px; }
+    .section-title { color: #38bdf8; margin-top: 15px; margin-bottom: 10px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; }
+    textarea { width: 100%; padding: 10px; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid #475569; box-sizing: border-box; resize: vertical; }
+    input[type="text"] { padding: 8px 12px; border-radius: 4px; border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 15px; }
+    .btn { padding: 10px 20px; border-radius: 6px; border: none; cursor: pointer; font-weight: bold; font-size: 15px; }
+    .btn-primary { background: #0284c7; color: white; }
+    .btn-success { background: #16a34a; color: white; margin-top: 15px; width: 100%; font-size: 16px; }
+    .status-msg { margin-top: 10px; font-weight: bold; display: block; text-align: center; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="nav-bar">
+    <h1>🏋️‍♂️️ 跑姿分析系統 - 教練後台</h1>
+    <a href="index.html" target="_blank">🔗 開啟學員檢視頁面</a>
+  </div>
+
+  <!-- 學員選擇區 -->
+  <div style="background: #334155; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+    <label style="font-size: 16px; font-weight: bold;">選擇/輸入學員編號：</label>
+    <input type="text" id="studentId" placeholder="例如：Student01" style="width: 200px; margin-right: 10px;">
+    <button id="loadFeedbackBtn" class="btn btn-primary">讀取學員歷史紀錄</button>
+  </div>
+
+  <!-- 關節建議輸入區 -->
+  <h2 class="section-title">撰寫關節評語與指導建議</h2>
+  <div class="grid">
+    <div>
+      <label style="font-weight: bold; display: block; margin-bottom: 5px; color: #f43f5e;">🦵 髖關節 (Hip) 指導：</label>
+      <textarea id="hipNotes" rows="5" placeholder="例如：伸展角度不足、骨盆有前傾現象..."></textarea>
+    </div>
+    <div>
+      <label style="font-weight: bold; display: block; margin-bottom: 5px; color: #eab308;">🦵 膝關節 (Knee) 指導：</label>
+      <textarea id="kneeNotes" rows="5" placeholder="例如：著地時折膝程度過大、腳掌落地點超出膝蓋前方..."></textarea>
+    </div>
+    <div>
+      <label style="font-weight: bold; display: block; margin-bottom: 5px; color: #10b981;">🦶 踝關節 (Ankle) 指導：</label>
+      <textarea id="ankleNotes" rows="5" placeholder="例如：推地瞬間背屈不足、觸地時間過長..."></textarea>
+    </div>
+  </div>
+
+  <button id="saveFeedbackBtn" class="btn btn-success">💾 儲存並同步指導建議給學員</button>
+  <span id="saveStatus" class="status-msg"></span>
+</div>
+
+<!-- Firebase SDK & 邏輯 -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCYLu-RAIbAIN9PiPQNyKzyjv6s-nHs7uA",
+    authDomain: "running-analysis-db.firebaseapp.com",
+    databaseURL: "https://running-analysis-db-default-rtdb.firebaseio.com",
+    projectId: "running-analysis-db",
+    storageBucket: "running-analysis-db.firebasestorage.app",
+    messagingSenderId: "154182697495",
+    appId: "1:154182697495:web:fc92eb15e46bd025265252",
+    measurementId: "G-67BZPFQ1S7"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  const studentIdInput = document.getElementById("studentId");
+  const hipNotes = document.getElementById("hipNotes");
+  const kneeNotes = document.getElementById("kneeNotes");
+  const ankleNotes = document.getElementById("ankleNotes");
+  const saveBtn = document.getElementById("saveFeedbackBtn");
+  const loadBtn = document.getElementById("loadFeedbackBtn");
+  const saveStatus = document.getElementById("saveStatus");
+
+  // 儲存評語
+  saveBtn.addEventListener("click", async () => {
+    const studentId = studentIdInput.value.trim();
+    if (!studentId) {
+      alert("請先輸入學員姓名或編號！");
+      return;
+    }
+
+    saveStatus.style.color = "#38bdf8";
+    saveStatus.textContent = "⏳ 儲存至雲端中...";
+    try {
+      await setDoc(doc(db, "coach_feedback", studentId), {
+        studentId: studentId,
+        hip: hipNotes.value,
+        knee: kneeNotes.value,
+        ankle: ankleNotes.value,
+        updatedAt: new Date().toLocaleString()
+      });
+      saveStatus.style.color = "#4ade80";
+      saveStatus.textContent = "✓ 已成功更新建議！學員端可立即查閱。";
+    } catch (error) {
+      console.error("儲存失敗：", error);
+      saveStatus.style.color = "#f87171";
+      saveStatus.textContent = "❌ 儲存失敗，請檢查網路連線。";
+    }
+  });
+
+  // 讀取評語
+  loadBtn.addEventListener("click", async () => {
+    const studentId = studentIdInput.value.trim();
+    if (!studentId) {
+      alert("請輸入學員編號！");
+      return;
+    }
+
+    try {
+      const docSnap = await getDoc(doc(db, "coach_feedback", studentId));
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        hipNotes.value = data.hip || "";
+        kneeNotes.value = data.knee || "";
+        ankleNotes.value = data.ankle || "";
+        saveStatus.style.color = "#4ade80";
+        saveStatus.textContent = `✓ 已讀取 ${studentId} 的最新記錄 (${data.updatedAt || '未知時間'})`;
+      } else {
+        alert("查無該學員記錄，可直接新增評語。");
+        hipNotes.value = ""; kneeNotes.value = ""; ankleNotes.value = "";
+      }
+    } catch (error) {
+      console.error("讀取失敗：", error);
+      alert("讀取資料失敗。");
+    }
+  });
+</script>
+
+</body>
+</html>
