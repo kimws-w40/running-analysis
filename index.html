@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>跑班矢狀面連續角度與時間軸分析系統</title>
+  
+  <!-- MediaPipe Pose CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+  
+  <!-- Chart.js 圖表庫 CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    h1 { margin: 0 0 10px 0; color: #38bdf8; font-size: 24px; }
+    
+    .controls {
+      display: flex;
+      gap: 15px;
+      background: #1e293b;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .btn {
+      background: #2563eb;
+      color: white;
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .btn:hover { background: #1d4ed8; }
+    
+    /* 影片區塊與下方進度條整合 */
+    .stage-card {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 20px;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+    }
+    .stage-container {
+      position: relative;
+      width: 100%;
+      background: #000;
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: pointer; /* 提示點擊即可播放/暫停 */
+    }
+    video { display: none; }
+    canvas#outputCanvas {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    
+    /* 貼合在影片下方的時間軸 */
+    .timeline-container {
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      padding: 4px 8px;
+    }
+    .timeline-slider {
+      flex-grow: 1;
+      height: 8px;
+      cursor: pointer;
+      accent-color: #38bdf8;
+    }
+    
+    .dashboard {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+    .card {
+      background: #1e293b;
+      padding: 12px 16px;
+      border-radius: 8px;
+      border-left: 4px solid #38bdf8;
+    }
+    .card.knee { border-left-color: #4ade80; }
+    .card.ankle { border-left-color: #fbbf24; }
+    .card h3 { margin: 0 0 4px 0; font-size: 13px; color: #94a3b8; }
+    .card .value { font-size: 26px; font-weight: bold; }
+
+    /* 圖表容器：加大高度並維持絕佳解析度 */
+    .chart-box {
+      background: #1e293b;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+    }
+    .chart-wrapper {
+      position: relative;
+      height: 320px; /* 大幅加高圖表尺寸 */
+      width: 100%;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>跑步矢狀面 (Sagittal) 5秒連續動作角度分析</h1>
+  </header>
+
+  <div class="controls">
+    <label for="videoInput" class="btn">上傳影片檔</label>
+    <input type="file" id="videoInput" accept="video/*" style="display:none">
+    
+    <button id="playPauseBtn" class="btn" style="background:#059669;">播放 / 暫停</button>
+
+    <label for="sideSelect" style="margin-left:auto;">分析側別：</label>
+    <select id="sideSelect" style="padding: 6px 12px; border-radius: 4px; background:#334155; color:#fff; border:none;">
+      <option value="right">右側視角 (Right)</option>
+      <option value="left">左側視角 (Left)</option>
+    </select>
+  </div>
+
+  <!-- 影片播放區塊 (包含畫面與緊貼下方的時間軸) -->
+  <div class="stage-card">
+    <div class="stage-container" id="stageContainer" title="點擊畫面以播放 / 暫停">
+      <video id="inputVideo" playsinline></video>
+      <canvas id="outputCanvas"></canvas>
+    </div>
+    
+    <!-- 影片拉條設置於影片框正下方 -->
+    <div class="timeline-container">
+      <span id="timeDisplay" style="font-family: monospace; font-size:14px; min-width:105px;">00:00 / 00:00</span>
+      <input type="range" id="seekBar" class="timeline-slider" value="0" min="0" max="100" step="0.01">
+    </div>
+  </div>
+
+  <div class="dashboard">
+    <div class="card">
+      <h3>髖關節夾角 (Hip)</h3>
+      <div class="value" id="valHip" style="color:#38bdf8;">--°</div>
+    </div>
+    <div class="card knee">
+      <h3>膝關節夾角 (Knee)</h3>
+      <div class="value" id="valKnee" style="color:#4ade80;">--°</div>
+    </div>
+    <div class="card ankle">
+      <h3>踝關節夾角 (Ankle)</h3>
+      <div class="value" id="valAnkle" style="color:#fbbf24;">--°</div>
+    </div>
+  </div>
+
+  <!-- 近5秒大尺寸動態折線圖 -->
+  <div class="chart-box">
+    <h3 style="margin:0; color:#cbd5e1; font-size:16px;">關節角度連續變化趨勢圖 (Dynamic Angle Window)</h3>
+    <div class="chart-wrapper">
+      <canvas id="angleChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+  const videoElement = document.getElementById('inputVideo');
+  const canvasElement = document.getElementById('outputCanvas');
+  const stageContainer = document.getElementById('stageContainer');
+  const canvasCtx = canvasElement.getContext('2d');
+  const sideSelect = document.getElementById('sideSelect');
+  const seekBar = document.getElementById('seekBar');
+  const timeDisplay = document.getElementById('timeDisplay');
+  const playPauseBtn = document.getElementById('playPauseBtn');
+
+  const valHip = document.getElementById('valHip');
+  const valKnee = document.getElementById('valKnee');
+  const valAnkle = document.getElementById('valAnkle');
+
+  // 時間序列數據緩衝區
+  let timeSeriesBuffer = []; 
+
+  // MediaPipe Landmark 索引
+  const LANDMARKS = {
+    LEFT_SHOULDER: 11, RIGHT_SHOULDER: 12,
+    LEFT_HIP: 23,      RIGHT_HIP: 24,
+    LEFT_KNEE: 25,     RIGHT_KNEE: 26,
+    LEFT_ANKLE: 27,    RIGHT_ANKLE: 28,
+    LEFT_FOOT_INDEX: 31, RIGHT_FOOT_INDEX: 32
+  };
+
+  // 三點求夾角 (頂點為 p2)
+  function calculateAngle(p1, p2, p3) {
+    const radians = Math.atan2(p3.y - p2.y, p3.x - p2.x) - Math.atan2(p1.y - p2.y, p1.x - p2.x);
+    let angle = Math.abs((radians * 180.0) / Math.PI);
+    if (angle > 180.0) angle = 360.0 - angle;
+    return angle;
+  }
+
+  // 初始化大尺寸 Chart.js 圖表
+  const ctxChart = document.getElementById('angleChart').getContext('2d');
+  const angleChart = new Chart(ctxChart, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label: '髖關節 Hip', borderColor: '#38bdf8', data: [], borderWidth: 3, pointRadius: 0, tension: 0.2 },
+        { label: '膝關節 Knee', borderColor: '#4ade80', data: [], borderWidth: 3, pointRadius: 0, tension: 0.2 },
+        { label: '踝關節 Ankle', borderColor: '#fbbf24', data: [], borderWidth: 3, pointRadius: 0, tension: 0.2 }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false, // 允許填滿高尺寸容器
+      animation: false,
+      scales: {
+        x: { 
+          title: { display: true, text: '影片時間 (秒)', color: '#94a3b8', font: { size: 14 } },
+          ticks: { color: '#cbd5e1' },
+          grid: { color: '#334155' }
+        },
+        y: { 
+          title: { display: true, text: '角度 (°)', color: '#94a3b8', font: { size: 14 } }, 
+          min: 30, 
+          max: 180, 
+          ticks: { color: '#cbd5e1', stepSize: 20 },
+          grid: { color: '#334155' }
+        }
+      },
+      plugins: {
+        legend: { 
+          labels: { color: '#f8fafc', font: { size: 14 } } 
+        }
+      }
+    }
+  });
+
+  // MediaPipe 骨骼處理主回呼
+  function onResults(results) {
+    if (canvasElement.width !== videoElement.videoWidth) {
+      canvasElement.width = videoElement.videoWidth;
+      canvasElement.height = videoElement.videoHeight;
+    }
+
+    canvasCtx.save();
+    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+    canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+    if (results.poseLandmarks) {
+      const landmarks = results.poseLandmarks;
+      const side = sideSelect.value;
+
+      const shoulderIdx = side === 'right' ? LANDMARKS.RIGHT_SHOULDER : LANDMARKS.LEFT_SHOULDER;
+      const hipIdx      = side === 'right' ? LANDMARKS.RIGHT_HIP      : LANDMARKS.LEFT_HIP;
+      const kneeIdx     = side === 'right' ? LANDMARKS.RIGHT_KNEE     : LANDMARKS.LEFT_KNEE;
+      const ankleIdx    = side === 'right' ? LANDMARKS.RIGHT_ANKLE    : LANDMARKS.LEFT_ANKLE;
+      const footIdx     = side === 'right' ? LANDMARKS.RIGHT_FOOT_INDEX : LANDMARKS.LEFT_FOOT_INDEX;
+
+      const pShoulder = { x: landmarks[shoulderIdx].x * canvasElement.width, y: landmarks[shoulderIdx].y * canvasElement.height };
+      const pHip      = { x: landmarks[hipIdx].x * canvasElement.width,      y: landmarks[hipIdx].y * canvasElement.height };
+      const pKnee     = { x: landmarks[kneeIdx].x * canvasElement.width,     y: landmarks[kneeIdx].y * canvasElement.height };
+      const pAnkle    = { x: landmarks[ankleIdx].x * canvasElement.width,    y: landmarks[ankleIdx].y * canvasElement.height };
+      const pFoot     = { x: landmarks[footIdx].x * canvasElement.width,     y: landmarks[footIdx].y * canvasElement.height };
+
+      const hipAngle   = calculateAngle(pShoulder, pHip, pKnee);
+      const kneeAngle  = calculateAngle(pHip, pKnee, pAnkle);
+      const ankleAngle = calculateAngle(pKnee, pAnkle, pFoot);
+
+      const currentTime = videoElement.currentTime;
+
+      valHip.innerText   = `${hipAngle.toFixed(1)}°`;
+      valKnee.innerText  = `${kneeAngle.toFixed(1)}°`;
+      valAnkle.innerText = `${ankleAngle.toFixed(1)}°`;
+
+      recordDataPoint(currentTime, hipAngle, kneeAngle, ankleAngle);
+
+      // 畫骨骼線與關節
+      drawSegment(pShoulder, pHip, '#38bdf8');
+      drawSegment(pHip, pKnee, '#4ade80');
+      drawSegment(pKnee, pAnkle, '#4ade80');
+      drawSegment(pAnkle, pFoot, '#fbbf24');
+
+      drawJointNode(pHip, '#38bdf8');
+      drawJointNode(pKnee, '#4ade80');
+      drawJointNode(pAnkle, '#fbbf24');
+
+      drawText(pKnee, `${kneeAngle.toFixed(0)}°`, '#4ade80');
+      drawText(pHip, `${hipAngle.toFixed(0)}°`, '#38bdf8');
+      drawText(pAnkle, `${ankleAngle.toFixed(0)}°`, '#fbbf24');
+
+      updateChartWindow(currentTime);
+    }
+    canvasCtx.restore();
+  }
+
+  function recordDataPoint(t, hip, knee, ankle) {
+    const existingIndex = timeSeriesBuffer.findIndex(d => Math.abs(d.time - t) < 0.03);
+    const dataPoint = { time: parseFloat(t.toFixed(2)), hip, knee, ankle };
+
+    if (existingIndex >= 0) {
+      timeSeriesBuffer[existingIndex] = dataPoint;
+    } else {
+      timeSeriesBuffer.push(dataPoint);
+      timeSeriesBuffer.sort((a, b) => a.time - b.time);
+    }
+  }
+
+  function updateChartWindow(currentTime) {
+    const windowStart = Math.max(0, currentTime - 5);
+    const windowEnd = currentTime;
+
+    const windowData = timeSeriesBuffer.filter(d => d.time >= windowStart && d.time <= windowEnd);
+
+    angleChart.data.labels = windowData.map(d => d.time.toFixed(1) + 's');
+    angleChart.data.datasets[0].data = windowData.map(d => d.hip);
+    angleChart.data.datasets[1].data = windowData.map(d => d.knee);
+    angleChart.data.datasets[2].data = windowData.map(d => d.ankle);
+    angleChart.update();
+  }
+
+  function drawSegment(p1, p2, color) {
+    canvasCtx.beginPath();
+    canvasCtx.moveTo(p1.x, p1.y);
+    canvasCtx.lineTo(p2.x, p2.y);
+    canvasCtx.strokeStyle = color;
+    canvasCtx.lineWidth = 4;
+    canvasCtx.stroke();
+  }
+
+  function drawJointNode(p, color) {
+    canvasCtx.beginPath();
+    canvasCtx.arc(p.x, p.y, 6, 0, 2 * Math.PI);
+    canvasCtx.fillStyle = '#ffffff';
+    canvasCtx.fill();
+    canvasCtx.lineWidth = 2;
+    canvasCtx.strokeStyle = color;
+    canvasCtx.stroke();
+  }
+
+  function drawText(p, text, color) {
+    canvasCtx.font = 'bold 16px Arial';
+    canvasCtx.fillStyle = color;
+    canvasCtx.strokeStyle = '#000000';
+    canvasCtx.lineWidth = 3;
+    canvasCtx.strokeText(text, p.x + 12, p.y + 4);
+    canvasCtx.fillText(text, p.x + 12, p.y + 4);
+  }
+
+  const pose = new Pose({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+  });
+  pose.setOptions({ modelComplexity: 1, smoothLandmarks: true });
+  pose.onResults(onResults);
+
+  async function processVideoFrame() {
+    if (!videoElement.paused && !videoElement.ended) {
+      await pose.send({ image: videoElement });
+      updateTimelineUI();
+      requestAnimationFrame(processVideoFrame);
+    }
+  }
+
+  function updateTimelineUI() {
+    seekBar.value = videoElement.currentTime;
+    const cur = formatTime(videoElement.currentTime);
+    const dur = formatTime(videoElement.duration || 0);
+    timeDisplay.innerText = `${cur} / ${dur}`;
+  }
+
+  function formatTime(sec) {
+    const m = Math.floor(sec / 60).toString().padStart(2, '0');
+    const s = Math.floor(sec % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  }
+
+  // 1. 拖動進度條重繪
+  seekBar.addEventListener('input', async () => {
+    videoElement.currentTime = seekBar.value;
+    updateTimelineUI();
+    await pose.send({ image: videoElement });
+  });
+
+  // 2. 點擊影片畫面播放 / 暫停
+  function togglePlayPause() {
+    if (!videoElement.src) return;
+    if (videoElement.paused) {
+      videoElement.play();
+      processVideoFrame();
+    } else {
+      videoElement.pause();
+    }
+  }
+
+  stageContainer.addEventListener('click', togglePlayPause);
+  playPauseBtn.addEventListener('click', togglePlayPause);
+
+  // 上傳影片處理
+  document.getElementById('videoInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      timeSeriesBuffer = []; // 清空前一次影片資料
+      videoElement.src = URL.createObjectURL(file);
+      videoElement.onloadedmetadata = () => {
+        seekBar.max = videoElement.duration;
+        updateTimelineUI();
+      };
+    }
+  });
+</script>
+
+</body>
+</html>
