@@ -117,8 +117,120 @@
       margin-top: 10px;
     }
   </style>
-</head>
-<body>
+<!-- 教練評語與雲端資料庫區塊 -->
+<div class="container" style="margin-top: 20px; background: #1e293b; padding: 20px; border-radius: 8px;">
+  <h2 style="color: #38bdf8; margin-top: 0;">教練分析與指導建議</h2>
+  
+  <div style="display: flex; gap: 15px; margin-bottom: 15px; flex-wrap: wrap;">
+    <label style="color: #f8fafc;">學員姓名/編號：
+      <input type="text" id="studentId" placeholder="例如：Student01" style="padding: 8px; border-radius: 4px; border: 1px solid #475569; background: #0f172a; color: #fff;">
+    </label>
+    <button id="loadFeedbackBtn" class="btn" style="background: #0284c7; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">載入評語</button>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+    <div>
+      <label style="color: #38bdf8; font-weight: bold; display: block; margin-bottom: 5px;">髖關節 (Hip) 建議：</label>
+      <textarea id="hipNotes" rows="4" placeholder="輸入關於髖關節伸展、前傾角度的建議..." style="width: 100%; padding: 8px; border-radius: 4px; background: #0f172a; color: #fff; border: 1px solid #475569;"></textarea>
+    </div>
+    <div>
+      <label style="color: #38bdf8; font-weight: bold; display: block; margin-bottom: 5px;">膝關節 (Knee) 建議：</label>
+      <textarea id="kneeNotes" rows="4" placeholder="輸入關於著地折膝、推離角度的建議..." style="width: 100%; padding: 8px; border-radius: 4px; background: #0f172a; color: #fff; border: 1px solid #475569;"></textarea>
+    </div>
+    <div>
+      <label style="color: #38bdf8; font-weight: bold; display: block; margin-bottom: 5px;">踝關節 (Ankle) 建議：</label>
+      <textarea id="ankleNotes" rows="4" placeholder="輸入關於腳掌推地、背屈角度的建議..." style="width: 100%; padding: 8px; border-radius: 4px; background: #0f172a; color: #fff; border: 1px solid #475569;"></textarea>
+    </div>
+  </div>
+
+  <button id="saveFeedbackBtn" class="btn" style="margin-top: 15px; background: #16a34a; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: bold;">儲存指導建議至雲端</button>
+  <span id="saveStatus" style="margin-left: 10px; color: #4ade80;"></span>
+</div></head>
+<!-- 引入 Firebase SDK (ES Module) -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  // 您專屬的 Firebase 設定
+  const firebaseConfig = {
+    apiKey: "AIzaSyCYLu-RAIbAIN9PiPQNyKzyjv6s-nHs7uA",
+    authDomain: "running-analysis-db.firebaseapp.com",
+    databaseURL: "https://running-analysis-db-default-rtdb.firebaseio.com",
+    projectId: "running-analysis-db",
+    storageBucket: "running-analysis-db.firebasestorage.app",
+    messagingSenderId: "154182697495",
+    appId: "1:154182697495:web:fc92eb15e46bd025265252",
+    measurementId: "G-67BZPFQ1S7"
+  };
+
+  // 初始化 Firebase & Firestore
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  const studentIdInput = document.getElementById("studentId");
+  const hipNotes = document.getElementById("hipNotes");
+  const kneeNotes = document.getElementById("kneeNotes");
+  const ankleNotes = document.getElementById("ankleNotes");
+  const saveBtn = document.getElementById("saveFeedbackBtn");
+  const loadBtn = document.getElementById("loadFeedbackBtn");
+  const saveStatus = document.getElementById("saveStatus");
+
+  // 1. 儲存教練建議到雲端資料庫
+  saveBtn.addEventListener("click", async () => {
+    const studentId = studentIdInput.value.trim();
+    if (!studentId) {
+      alert("請先輸入學員姓名或編號！");
+      return;
+    }
+
+    saveStatus.textContent = "儲存中...";
+    try {
+      await setDoc(doc(db, "coach_feedback", studentId), {
+        studentId: studentId,
+        hip: hipNotes.value,
+        knee: kneeNotes.value,
+        ankle: ankleNotes.value,
+        updatedAt: new Date().toISOString()
+      });
+      saveStatus.textContent = "✓ 已成功儲存至雲端！";
+      setTimeout(() => saveStatus.textContent = "", 3000);
+    } catch (error) {
+      console.error("儲存失敗：", error);
+      saveStatus.textContent = "儲存失敗，請再試一次。";
+    }
+  });
+
+  // 2. 載入該學員的雲端建議
+  loadBtn.addEventListener("click", async () => {
+    const studentId = studentIdInput.value.trim();
+    if (!studentId) {
+      alert("請輸入學員姓名或編號以進行查詢");
+      return;
+    }
+
+    try {
+      const docRef = doc(db, "coach_feedback", studentId);
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        hipNotes.value = data.hip || "";
+        kneeNotes.value = data.knee || "";
+        ankleNotes.value = data.ankle || "";
+        saveStatus.textContent = "✓ 已載入雲端評語";
+        setTimeout(() => saveStatus.textContent = "", 3000);
+      } else {
+        alert("查無該學員的歷史評語記錄");
+        hipNotes.value = "";
+        kneeNotes.value = "";
+        ankleNotes.value = "";
+      }
+    } catch (error) {
+      console.error("載入失敗：", error);
+      alert("讀取資料失敗，請確認網路連線。");
+    }
+  });
+</script><body>
 
 <div class="container">
   <header>
