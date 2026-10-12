@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>跑姿分析系統 - 教練管理與倍速分析後台</title>
-  
   <!-- MediaPipe Pose CDN -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
@@ -22,6 +21,7 @@
     .btn-primary { background: #0284c7; color: white; }
     .btn-success { background: #16a34a; color: white; }
     .btn-secondary { background: #059669; color: white; }
+  
     
     /* 影片與畫布容器 */
     .stage-card { background: #0f172a; border-radius: 8px; padding: 10px; margin-bottom: 15px; }
@@ -73,10 +73,10 @@
 
     <label style="margin-left:auto;">播放倍速：</label>
     <select id="speedSelect" style="padding: 6px 10px; border-radius: 4px; background:#1e293b; color:#fff; border:1px solid #475569;">
-      <option value="0.25">0.25x (慢動作)</option>
-      <option value="0.5">0.5x (半速)</option>
+      <option value="0.25">0.25x </option>
+      <option value="0.5">0.5x  </option>
       <option value="0.75">0.75x</option>
-      <option value="1.0" selected>1.0x (正常速度)</option>
+      <option value="1.0" selected>1.0xㄕ</option>
     </select>
 
     <label>側別：</label>
@@ -203,7 +203,12 @@
   const pose = new Pose({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
   });
-  pose.setOptions({ modelComplexity: 1, smoothLandmarks: true });
+ pose.setOptions({ 
+    modelComplexity: 2,           // 提升為最高精準度模型
+    smoothLandmarks: true,        // 開啟平滑過濾，減少抖動
+    minDetectionConfidence: 0.6,  // 提高偵測信心閥值
+    minTrackingConfidence: 0.6    // 提高追蹤信心閥值
+  });
   
   pose.onResults((results) => {
     if (canvasElement.width !== videoElement.videoWidth) {
