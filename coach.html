@@ -3,20 +3,49 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>跑姿分析系統 - 教練管理後台</title>
+  <title>跑姿分析系統 - 教練管理與倍速分析後台</title>
+  
+  <!-- MediaPipe Pose CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+
   <style>
+    * { box-sizing: border-box; }
     body { font-family: sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; }
-    .container { max-width: 1000px; margin: 0 auto; background: #1e293b; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-    h1 { color: #38bdf8; border-bottom: 2px solid #334155; padding-bottom: 10px; }
-    .nav-bar { margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+    .container { max-width: 1100px; margin: 0 auto; background: #1e293b; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+    h1 { color: #38bdf8; border-bottom: 2px solid #334155; padding-bottom: 10px; margin-top: 0; }
+    .nav-bar { margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
     .nav-bar a { color: #38bdf8; text-decoration: none; font-size: 14px; }
-    .section-title { color: #38bdf8; margin-top: 15px; margin-bottom: 10px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; }
-    textarea { width: 100%; padding: 10px; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid #475569; box-sizing: border-box; resize: vertical; }
-    input[type="text"] { padding: 8px 12px; border-radius: 4px; border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 15px; }
-    .btn { padding: 10px 20px; border-radius: 6px; border: none; cursor: pointer; font-weight: bold; font-size: 15px; }
+    
+    .controls { display: flex; gap: 15px; background: #334155; padding: 12px; border-radius: 8px; margin-bottom: 15px; align-items: center; flex-wrap: wrap; }
+    .btn { padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-weight: bold; }
     .btn-primary { background: #0284c7; color: white; }
-    .btn-success { background: #16a34a; color: white; margin-top: 15px; width: 100%; font-size: 16px; }
+    .btn-success { background: #16a34a; color: white; }
+    .btn-secondary { background: #059669; color: white; }
+    
+    /* 影片與畫布容器 */
+    .stage-card { background: #0f172a; border-radius: 8px; padding: 10px; margin-bottom: 15px; }
+    .stage-container { position: relative; width: 100%; background: #000; border-radius: 6px; overflow: hidden; cursor: pointer; }
+    video { display: none; }
+    canvas#outputCanvas { display: block; width: 100%; height: auto; }
+
+    /* 播放控制橫條 */
+    .timeline-container { margin-top: 10px; display: flex; align-items: center; gap: 15px; }
+    .timeline-slider { flex-grow: 1; height: 6px; accent-color: #38bdf8; cursor: pointer; }
+
+    /* 即時數據小卡 */
+    .dashboard { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 15px; }
+    .card { background: #0f172a; padding: 10px; border-radius: 6px; border-left: 4px solid #38bdf8; }
+    .card.knee { border-left-color: #4ade80; }
+    .card.ankle { border-left-color: #fbbf24; }
+    .card h3 { margin: 0 0 4px 0; font-size: 12px; color: #94a3b8; }
+    .card .value { font-size: 22px; font-weight: bold; }
+
+    .section-title { color: #38bdf8; margin-top: 15px; margin-bottom: 10px; font-size: 18px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px; }
+    textarea { width: 100%; padding: 10px; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid #475569; resize: vertical; }
+    input[type="text"] { padding: 8px 12px; border-radius: 4px; border: 1px solid #475569; background: #0f172a; color: #fff; }
+    .capture-btn { background: #d97706; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-bottom: 5px; float: right; }
     .status-msg { margin-top: 10px; font-weight: bold; display: block; text-align: center; }
   </style>
 </head>
@@ -24,39 +53,99 @@
 
 <div class="container">
   <div class="nav-bar">
-    <h1>🏋️‍♂️️ 跑姿分析系統 - 教練後台</h1>
-    <a href="index.html" target="_blank">🔗 開啟學員檢視頁面</a>
+    <h1>🏋️‍♂️ 跑姿分析系統 - 教練倍速分析與後台</h1>
+    <a href="index.html" target="_blank">🔗 開啟學員前台檢視頁面</a>
   </div>
 
-  <!-- 學員選擇區 -->
-  <div style="background: #334155; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
-    <label style="font-size: 16px; font-weight: bold;">選擇/輸入學員編號：</label>
-    <input type="text" id="studentId" placeholder="例如：Student01" style="width: 200px; margin-right: 10px;">
+  <!-- 學員選擇與載入 -->
+  <div style="background: #334155; padding: 12px; border-radius: 6px; margin-bottom: 15px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+    <label style="font-weight: bold;">學員編號：</label>
+    <input type="text" id="studentId" placeholder="例如：Student01" style="width: 180px;">
     <button id="loadFeedbackBtn" class="btn btn-primary">讀取學員歷史紀錄</button>
   </div>
 
-  <!-- 關節建議輸入區 -->
-  <h2 class="section-title">撰寫關節評語與指導建議</h2>
-  <div class="grid">
-    <div>
-      <label style="font-weight: bold; display: block; margin-bottom: 5px; color: #f43f5e;">🦵 髖關節 (Hip) 指導：</label>
-      <textarea id="hipNotes" rows="5" placeholder="例如：伸展角度不足、骨盆有前傾現象..."></textarea>
+  <!-- 影片上傳與倍速控制列 -->
+  <div class="controls">
+    <label for="videoInput" class="btn btn-primary">📂 載入學員上傳影片</label>
+    <input type="file" id="videoInput" accept="video/*" style="display:none">
+    
+    <button id="playPauseBtn" class="btn btn-secondary">播放 / 暫停</button>
+
+    <label style="margin-left:auto;">播放倍速：</label>
+    <select id="speedSelect" style="padding: 6px 10px; border-radius: 4px; background:#1e293b; color:#fff; border:1px solid #475569;">
+      <option value="0.25">0.25x (慢動作)</option>
+      <option value="0.5">0.5x (半速)</option>
+      <option value="0.75">0.75x</option>
+      <option value="1.0" selected>1.0x (正常速度)</option>
+    </select>
+
+    <label>側別：</label>
+    <select id="sideSelect" style="padding: 6px 10px; border-radius: 4px; background:#1e293b; color:#fff; border:1px solid #475569;">
+      <option value="right">右側 (Right)</option>
+      <option value="left">左側 (Left)</option>
+    </select>
+  </div>
+
+  <!-- 影片播放預覽與骨骼分析 -->
+  <div class="stage-card">
+    <div class="stage-container" id="stageContainer" title="點擊畫面播放/暫停">
+      <video id="inputVideo" playsinline></video>
+      <canvas id="outputCanvas"></canvas>
     </div>
-    <div>
-      <label style="font-weight: bold; display: block; margin-bottom: 5px; color: #eab308;">🦵 膝關節 (Knee) 指導：</label>
-      <textarea id="kneeNotes" rows="5" placeholder="例如：著地時折膝程度過大、腳掌落地點超出膝蓋前方..."></textarea>
-    </div>
-    <div>
-      <label style="font-weight: bold; display: block; margin-bottom: 5px; color: #10b981;">🦶 踝關節 (Ankle) 指導：</label>
-      <textarea id="ankleNotes" rows="5" placeholder="例如：推地瞬間背屈不足、觸地時間過長..."></textarea>
+    
+    <div class="timeline-container">
+      <span id="timeDisplay" style="font-family: monospace; font-size:13px; min-width:95px;">00:00 / 00:00</span>
+      <input type="range" id="seekBar" class="timeline-slider" value="0" min="0" max="100" step="0.01">
     </div>
   </div>
 
-  <button id="saveFeedbackBtn" class="btn btn-success">💾 儲存並同步指導建議給學員</button>
+  <!-- 即時角度顯示看板 -->
+  <div class="dashboard">
+    <div class="card">
+      <h3>當前 髖關節 (Hip)</h3>
+      <div class="value" id="valHip" style="color:#38bdf8;">--°</div>
+    </div>
+    <div class="card knee">
+      <h3>當前 膝關節 (Knee)</h3>
+      <div class="value" id="valKnee" style="color:#4ade80;">--°</div>
+    </div>
+    <div class="card ankle">
+      <h3>當前 踝關節 (Ankle)</h3>
+      <div class="value" id="valAnkle" style="color:#fbbf24;">--°</div>
+    </div>
+  </div>
+
+  <!-- 關節評語撰寫區 (含一鍵擷取按鈕) -->
+  <h2 class="section-title">撰寫指導建議（可點擊上方擷取按鈕記錄關鍵秒數與角度）</h2>
+  <div class="grid">
+    <div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+        <label style="font-weight: bold; color: #f43f5e;">🦵 髖關節 (Hip) 指導：</label>
+        <button type="button" class="capture-btn" id="captureHip">⚡ 擷取當前秒數與角度</button>
+      </div>
+      <textarea id="hipNotes" rows="4" placeholder="輸入髖關節建議..."></textarea>
+    </div>
+    <div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+        <label style="font-weight: bold; color: #eab308;">🦵 膝關節 (Knee) 指導：</label>
+        <button type="button" class="capture-btn" id="captureKnee">⚡ 擷取當前秒數與角度</button>
+      </div>
+      <textarea id="kneeNotes" rows="4" placeholder="輸入膝關節建議..."></textarea>
+    </div>
+    <div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+        <label style="font-weight: bold; color: #10b981;">🦶 踝關節 (Ankle) 指導：</label>
+        <button type="button" class="capture-btn" id="captureAnkle">⚡ 擷取當前秒數與角度</button>
+      </div>
+      <textarea id="ankleNotes" rows="4" placeholder="輸入踝關節建議..."></textarea>
+    </div>
+  </div>
+
+  <button id="saveFeedbackBtn" class="btn btn-success" style="margin-top: 15px; width: 100%; padding: 12px; font-size: 16px;">💾 儲存並同步指導建議給學員</button>
   <span id="saveStatus" class="status-msg"></span>
 </div>
 
-<!-- Firebase SDK & 邏輯 -->
+<!-- Firebase 與 MediaPipe 邏輯 -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -83,11 +172,168 @@
   const loadBtn = document.getElementById("loadFeedbackBtn");
   const saveStatus = document.getElementById("saveStatus");
 
-  // 儲存評語
+  // 影片與骨骼分析變數
+  const videoElement = document.getElementById('inputVideo');
+  const canvasElement = document.getElementById('outputCanvas');
+  const stageContainer = document.getElementById('stageContainer');
+  const canvasCtx = canvasElement.getContext('2d');
+  const sideSelect = document.getElementById('sideSelect');
+  const speedSelect = document.getElementById('speedSelect');
+  const seekBar = document.getElementById('seekBar');
+  const timeDisplay = document.getElementById('timeDisplay');
+  const playPauseBtn = document.getElementById('playPauseBtn');
+
+  let currentHip = 0, currentKnee = 0, currentAnkle = 0;
+
+  const LANDMARKS = {
+    LEFT_SHOULDER: 11, RIGHT_SHOULDER: 12,
+    LEFT_HIP: 23,      RIGHT_HIP: 24,
+    LEFT_KNEE: 25,     RIGHT_KNEE: 26,
+    LEFT_ANKLE: 27,    RIGHT_ANKLE: 28,
+    LEFT_FOOT_INDEX: 31, RIGHT_FOOT_INDEX: 32
+  };
+
+  function calculateAngle(p1, p2, p3) {
+    const radians = Math.atan2(p3.y - p2.y, p3.x - p2.x) - Math.atan2(p1.y - p2.y, p1.x - p2.x);
+    let angle = Math.abs((radians * 180.0) / Math.PI);
+    if (angle > 180.0) angle = 360.0 - angle;
+    return angle;
+  }
+
+  const pose = new Pose({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+  });
+  pose.setOptions({ modelComplexity: 1, smoothLandmarks: true });
+  
+  pose.onResults((results) => {
+    if (canvasElement.width !== videoElement.videoWidth) {
+      canvasElement.width = videoElement.videoWidth;
+      canvasElement.height = videoElement.videoHeight;
+    }
+
+    canvasCtx.save();
+    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+    canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+    if (results.poseLandmarks) {
+      const landmarks = results.poseLandmarks;
+      const side = sideSelect.value;
+
+      const shoulderIdx = side === 'right' ? LANDMARKS.RIGHT_SHOULDER : LANDMARKS.LEFT_SHOULDER;
+      const hipIdx      = side === 'right' ? LANDMARKS.RIGHT_HIP      : LANDMARKS.LEFT_HIP;
+      const kneeIdx     = side === 'right' ? LANDMARKS.RIGHT_KNEE     : LANDMARKS.LEFT_KNEE;
+      const ankleIdx    = side === 'right' ? LANDMARKS.RIGHT_ANKLE    : LANDMARKS.LEFT_ANKLE;
+      const footIdx     = side === 'right' ? LANDMARKS.RIGHT_FOOT_INDEX : LANDMARKS.LEFT_FOOT_INDEX;
+
+      const pShoulder = { x: landmarks[shoulderIdx].x * canvasElement.width, y: landmarks[shoulderIdx].y * canvasElement.height };
+      const pHip      = { x: landmarks[hipIdx].x * canvasElement.width,      y: landmarks[hipIdx].y * canvasElement.height };
+      const pKnee     = { x: landmarks[kneeIdx].x * canvasElement.width,     y: landmarks[kneeIdx].y * canvasElement.height };
+      const pAnkle    = { x: landmarks[ankleIdx].x * canvasElement.width,    y: landmarks[ankleIdx].y * canvasElement.height };
+      const pFoot     = { x: landmarks[footIdx].x * canvasElement.width,     y: landmarks[footIdx].y * canvasElement.height };
+
+      currentHip   = calculateAngle(pShoulder, pHip, pKnee);
+      currentKnee  = calculateAngle(pHip, pKnee, pAnkle);
+      currentAnkle = calculateAngle(pKnee, pAnkle, pFoot);
+
+      document.getElementById('valHip').innerText = `${currentHip.toFixed(1)}°`;
+      document.getElementById('valKnee').innerText = `${currentKnee.toFixed(1)}°`;
+      document.getElementById('valAnkle').innerText = `${currentAnkle.toFixed(1)}°`;
+
+      // 畫骨骼
+      drawSegment(pShoulder, pHip, '#38bdf8');
+      drawSegment(pHip, pKnee, '#4ade80');
+      drawSegment(pKnee, pAnkle, '#4ade80');
+      drawSegment(pAnkle, pFoot, '#fbbf24');
+    }
+    canvasCtx.restore();
+  });
+
+  function drawSegment(p1, p2, color) {
+    canvasCtx.beginPath();
+    canvasCtx.moveTo(p1.x, p1.y);
+    canvasCtx.lineTo(p2.x, p2.y);
+    canvasCtx.strokeStyle = color;
+    canvasCtx.lineWidth = 4;
+    canvasCtx.stroke();
+  }
+
+  async function processVideoFrame() {
+    if (!videoElement.paused && !videoElement.ended) {
+      await pose.send({ image: videoElement });
+      updateTimelineUI();
+      requestAnimationFrame(processVideoFrame);
+    }
+  }
+
+  function updateTimelineUI() {
+    seekBar.value = videoElement.currentTime;
+    const cur = formatTime(videoElement.currentTime);
+    const dur = formatTime(videoElement.duration || 0);
+    timeDisplay.innerText = `${cur} / ${dur}`;
+  }
+
+  function formatTime(sec) {
+    const m = Math.floor(sec / 60).toString().padStart(2, '0');
+    const s = Math.floor(sec % 60).toString().padStart(2, '0');
+    const ms = Math.floor((sec % 1) * 10).toString();
+    return `${m}:${s}.${ms}`;
+  }
+
+  // 倍速控制
+  speedSelect.addEventListener('change', () => {
+    videoElement.playbackRate = parseFloat(speedSelect.value);
+  });
+
+  // 播放控制
+  function togglePlayPause() {
+    if (!videoElement.src) return;
+    if (videoElement.paused) {
+      videoElement.play();
+      processVideoFrame();
+    } else {
+      videoElement.pause();
+    }
+  }
+
+  stageContainer.addEventListener('click', togglePlayPause);
+  playPauseBtn.addEventListener('click', togglePlayPause);
+
+  seekBar.addEventListener('input', async () => {
+    videoElement.currentTime = seekBar.value;
+    updateTimelineUI();
+    await pose.send({ image: videoElement });
+  });
+
+  document.getElementById('videoInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      videoElement.src = URL.createObjectURL(file);
+      videoElement.onloadedmetadata = () => {
+        seekBar.max = videoElement.duration;
+        updateTimelineUI();
+      };
+    }
+  });
+
+  // ⚡ 擷取按鈕功能：自動將當前秒數與角度填入對應的文字框
+  document.getElementById('captureHip').addEventListener('click', () => {
+    const timeStr = formatTime(videoElement.currentTime);
+    hipNotes.value += `\n[${timeStr} 處] 髖關節角度: ${currentHip.toFixed(1)}° - `;
+  });
+  document.getElementById('captureKnee').addEventListener('click', () => {
+    const timeStr = formatTime(videoElement.currentTime);
+    kneeNotes.value += `\n[${timeStr} 處] 膝關節角度: ${currentKnee.toFixed(1)}° - `;
+  });
+  document.getElementById('captureAnkle').addEventListener('click', () => {
+    const timeStr = formatTime(videoElement.currentTime);
+    ankleNotes.value += `\n[${timeStr} 處] 踝關節角度: ${currentAnkle.toFixed(1)}° - `;
+  });
+
+  // 儲存評語至 Firestore
   saveBtn.addEventListener("click", async () => {
     const studentId = studentIdInput.value.trim();
     if (!studentId) {
-      alert("請先輸入學員姓名或編號！");
+      alert("請先輸入學員編號！");
       return;
     }
 
@@ -106,7 +352,7 @@
     } catch (error) {
       console.error("儲存失敗：", error);
       saveStatus.style.color = "#f87171";
-      saveStatus.textContent = "❌ 儲存失敗，請檢查網路連線。";
+      saveStatus.textContent = "❌ 儲存失敗。";
     }
   });
 
@@ -126,14 +372,13 @@
         kneeNotes.value = data.knee || "";
         ankleNotes.value = data.ankle || "";
         saveStatus.style.color = "#4ade80";
-        saveStatus.textContent = `✓ 已讀取 ${studentId} 的最新記錄 (${data.updatedAt || '未知時間'})`;
+        saveStatus.textContent = `✓ 已載入 ${studentId} 的歷史評語`;
       } else {
-        alert("查無該學員記錄，可直接新增評語。");
+        alert("查無該學員紀錄。");
         hipNotes.value = ""; kneeNotes.value = ""; ankleNotes.value = "";
       }
     } catch (error) {
       console.error("讀取失敗：", error);
-      alert("讀取資料失敗。");
     }
   });
 </script>
