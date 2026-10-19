@@ -103,7 +103,7 @@
         }
 
         video {
-            display: none; /* 隱藏原生影片，改用 Canvas 繪製鏡頭與骨架 */
+            display: none; 
         }
 
         canvas {
@@ -116,10 +116,10 @@
         .status-overlay {
             position: absolute;
             bottom: 15px;
-            background: rgba(0, 0, 0, 0.7);
-            padding: 8px 16px;
+            background: rgba(0, 0, 0, 0.75);
+            padding: 10px 20px;
             border-radius: 20px;
-            font-size: 1.1rem;
+            font-size: 1.2rem;
             font-weight: bold;
             color: #f1c40f;
             z-index: 10;
@@ -130,7 +130,7 @@
 
     <header>
         <a href="./index.html" class="back-btn">← 返回會員首頁</a>
-        <h1>⚔️ 深蹲打怪挑戰 (手機前鏡頭)</h1>
+        <h1>⚔️ 深蹲打怪挑戰</h1>
     </header>
 
     <div class="game-container">
@@ -138,7 +138,7 @@
         <div class="hud">
             <h2 id="level-title">第一關：小怪來襲</h2>
             <p id="monster-name">對手: 史萊姆</p>
-            <p>本關深蹲目標：<span id="rep-counter">0 / 10</span> | 當前膝蓋角度：<span id="angle-display">--</span>°</p>
+            <p>本關深蹲目標：<span id="rep-counter">0 / 10</span></p>
             <div class="hp-bar-container">
                 <div id="boss-hp-bar" class="hp-bar"></div>
             </div>
@@ -171,7 +171,6 @@
         const canvasElement = document.getElementById('output-canvas');
         const canvasCtx = canvasElement.getContext('2d');
         const statusDisplay = document.getElementById('action-status');
-        const angleDisplay = document.getElementById('angle-display');
 
         // 計算三點夾角的數學函式 (以膝蓋為頂點：髖、膝、踝)
         function calculateAngle(a, b, c) {
@@ -182,6 +181,13 @@
             }
             return angle;
         }
+
+        // 定義身體骨架連線（讓畫面上能完整顯示骨架結構）
+        const POSE_CONNECTIONS = [
+            [11, 12], [11, 23], [12, 24], [23, 24], // 軀幹
+            [11, 13], [13, 15], [12, 14], [14, 16], // 手臂
+            [23, 25], [25, 27], [24, 26], [26, 28]  // 腿部
+        ];
 
         // 當偵測到 MediaPipe 返回骨架結果時觸發
         function onResults(results) {
@@ -194,41 +200,62 @@
 
             if (results.poseLandmarks) {
                 const landmarks = results.poseLandmarks;
-                const hip = landmarks[24];   // 右髖
-                const knee = landmarks[26];  // 右膝
-                const ankle = landmarks[28]; // 右踝
+
+                // 1. 繪製全身骨架連線
+                canvasCtx.lineWidth = 4;
+                canvasCtx.strokeStyle = '#00ffcc'; // 青綠色骨架線
+                for (const connection of POSE_CONNECTIONS) {
+                    const startIdx = connection[0];
+                    const endIdx = connection[1];
+                    const start = landmarks[startIdx];
+                    const end = landmarks[endIdx];
+
+                    if (start && end && (start.visibility > 0.5 && end.visibility > 0.5)) {
+                        canvasCtx.beginPath();
+                        canvasCtx.moveTo(start.x * canvasElement.width, start.y * canvasElement.height);
+                        canvasCtx.lineTo(end.x * canvasElement.width, end.y * canvasElement.height);
+                        canvasCtx.stroke();
+                    }
+                }
+
+                // 2. 繪製關節點圓圈
+                canvasCtx.fillStyle = '#ff0055'; // 桃紅色關節點
+                for (const landmark of landmarks) {
+                    if (landmark.visibility > 0.5) {
+                        canvasCtx.beginPath();
+                        canvasCtx.arc(landmark.x * canvasElement.width, landmark.y * canvasElement.height, 6, 0, 2 * Math.PI);
+                        canvasCtx.fill();
+                    }
+                }
+
+                // 3. 深蹲判定邏輯 (以右側為例：右髖 24, 右膝 26, 右踝 28)
+                const hip = landmarks[24];
+                const knee = landmarks[26];
+                const ankle = landmarks[28];
 
                 if (hip && knee && ankle) {
                     let kneeAngle = calculateAngle(hip, knee, ankle);
-                    angleDisplay.innerText = Math.round(kneeAngle);
 
-                    // 畫出膝蓋追蹤圓點
-                    canvasCtx.fillStyle = "#e43f5a";
-                    let kneeX = knee.x * canvasElement.width;
-                    let kneeY = knee.y * canvasElement.height;
-                    canvasCtx.beginPath();
-                    canvasCtx.arc(kneeX, kneeY, 12, 0, 2 * Math.PI);
-                    canvasCtx.fill();
-
-                    // --- 深蹲狀態機與自動扣血判定邏輯 ---
                     if (kneeAngle > 160) {
                         gameState.squatState = "UP";
-                        statusDisplay.innerText = "請下蹲 (UP)";
-                        statusDisplay.style.color = "#2ecc71";
+                        statusStatusUpdate("請下蹲 (UP)", "#2ecc71");
                     } else if (kneeAngle < 100 && gameState.squatState === "UP") {
                         gameState.squatState = "DOWN";
-                        statusDisplay.innerText = "好！站起來！(DOWN)";
-                        statusDisplay.style.color = "#f1c40f";
+                        statusStatusUpdate("好！站起來！(DOWN)", "#f1c40f");
                     } else if (kneeAngle > 150 && gameState.squatState === "DOWN") {
                         gameState.squatState = "UP";
                         onSquatCompleted();
                     }
                 }
             } else {
-                statusDisplay.innerText = "未偵測到身體，請退後讓鏡頭拍到全身！";
-                statusDisplay.style.color = "#e74c3c";
+                statusStatusUpdate("未偵測到身體，請後退讓鏡頭拍到全身！", "#e74c3c");
             }
             canvasCtx.restore();
+        }
+
+        function statusStatusUpdate(text, color) {
+            statusDisplay.innerText = text;
+            statusDisplay.style.color = color;
         }
 
         // 初始化 MediaPipe Pose
@@ -251,7 +278,7 @@
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: { 
-                        facingMode: "user", // 強制使用前鏡頭
+                        facingMode: "user", 
                         width: { ideal: 640 },
                         height: { ideal: 480 }
                     }
@@ -312,7 +339,7 @@
         function updateGameUI() {
             document.getElementById("level-title").innerText = levelConfigs[gameState.level].name;
             document.getElementById("monster-name").innerText = `對手: ${levelConfigs[gameState.level].monsterName}`;
-            document.getElementById("rep-counter").innerText = `${gameState.currentReps} / ${gameState.targetReps}`;
+            document.getElementById("rep-counter").innerText = `${gameState.currentReps} / `${gameState.targetReps};
             
             let hpPercent = ((gameState.targetReps - gameState.currentReps) / gameState.targetReps) * 100;
             if (hpPercent < 0) hpPercent = 0;
