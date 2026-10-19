@@ -6,7 +6,6 @@
     <title>深蹲打怪挑戰 - 跑步與訓練平台</title>
     
     <!-- 引入 MediaPipe Pose 必要的函式庫 -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
 
     <style>
@@ -123,6 +122,7 @@
             font-size: 1.1rem;
             font-weight: bold;
             color: #f1c40f;
+            z-index: 10;
         }
     </style>
 </head>
@@ -130,7 +130,7 @@
 
     <header>
         <a href="./index.html" class="back-btn">← 返回會員首頁</a>
-        <h1>⚔️ 深蹲打怪挑戰 (即時AI判定)</h1>
+        <h1>⚔️ 深蹲打怪挑戰 (手機前鏡頭)</h1>
     </header>
 
     <div class="game-container">
@@ -148,7 +148,7 @@
         <div class="video-box">
             <video id="webcam" autoplay playsinline></video>
             <canvas id="output-canvas"></canvas>
-            <div id="action-status" class="status-overlay">請站到鏡頭前，準備深蹲！</div>
+            <div id="action-status" class="status-overlay">正在請求相機權限...</div>
         </div>
     </div>
 
@@ -185,35 +185,29 @@
 
         // 當偵測到 MediaPipe 返回骨架結果時觸發
         function onResults(results) {
-            canvasElement.width = videoElement.videoWidth;
-            canvasElement.height = videoElement.videoHeight;
+            canvasElement.width = videoElement.videoWidth || 640;
+            canvasElement.height = videoElement.videoHeight || 480;
 
             canvasCtx.save();
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
             canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
             if (results.poseLandmarks) {
-                // 取得身體右側或左側關節 (這裡以右側為例：右髖 24, 右膝 26, 右踝 28)
                 const landmarks = results.poseLandmarks;
-                const hip = landmarks[24];
-                const knee = landmarks[26];
-                const ankle = landmarks[28];
+                const hip = landmarks[24];   // 右髖
+                const knee = landmarks[26];  // 右膝
+                const ankle = landmarks[28]; // 右踝
 
                 if (hip && knee && ankle) {
-                    // 計算膝關節夾角
                     let kneeAngle = calculateAngle(hip, knee, ankle);
                     angleDisplay.innerText = Math.round(kneeAngle);
 
-                    // 繪製關節點與骨架連線（簡化版視覺化）
+                    // 畫出膝蓋追蹤圓點
                     canvasCtx.fillStyle = "#e43f5a";
-                    canvasCtx.strokeStyle = "#2ecc71";
-                    canvasCtx.lineWidth = 4;
-
-                    // 畫出膝蓋圓點
                     let kneeX = knee.x * canvasElement.width;
                     let kneeY = knee.y * canvasElement.height;
                     canvasCtx.beginPath();
-                    canvasCtx.arc(kneeX, kneeY, 10, 0, 2 * Math.PI);
+                    canvasCtx.arc(kneeX, kneeY, 12, 0, 2 * Math.PI);
                     canvasCtx.fill();
 
                     // --- 深蹲狀態機與自動扣血判定邏輯 ---
@@ -222,18 +216,65 @@
                         statusDisplay.innerText = "請下蹲 (UP)";
                         statusDisplay.style.color = "#2ecc71";
                     } else if (kneeAngle < 100 && gameState.squatState === "UP") {
-                        // 從站立進入下蹲
                         gameState.squatState = "DOWN";
                         statusDisplay.innerText = "好！站起來！(DOWN)";
                         statusDisplay.style.color = "#f1c40f";
                     } else if (kneeAngle > 150 && gameState.squatState === "DOWN") {
-                        // 從下蹲站回站立，判定完成一下有效深蹲！
                         gameState.squatState = "UP";
                         onSquatCompleted();
                     }
                 }
+            } else {
+                statusDisplay.innerText = "未偵測到身體，請退後讓鏡頭拍到全身！";
+                statusDisplay.style.color = "#e74c3c";
             }
             canvasCtx.restore();
+        }
+
+        // 初始化 MediaPipe Pose
+        const pose = new Pose({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+        });
+
+        pose.setOptions({
+            modelComplexity: 1,
+            smoothLandmarks: true,
+            enableSegmentation: false,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        pose.onResults(onResults);
+
+        // 使用標準 Web API 啟動手機前鏡頭
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { 
+                        facingMode: "user", // 強制使用前鏡頭
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
+                    }
+                });
+                videoElement.srcObject = stream;
+                
+                videoElement.onloadedmetadata = () => {
+                    videoElement.play();
+                    predictWebcam();
+                };
+                statusDisplay.innerText = "相機已啟動，請站到鏡頭前！";
+            } catch (err) {
+                console.error("無法開啟相機: ", err);
+                statusDisplay.innerText = "無法存取相機，請檢查權限或確認網址為 HTTPS！";
+            }
+        }
+
+        // 循環偵測函數
+        async function predictWebcam() {
+            if (videoElement.readyState >= 2) {
+                await pose.send({ image: videoElement });
+            }
+            requestAnimationFrame(predictWebcam);
         }
 
         // 完成一下深蹲的後續處理
@@ -278,32 +319,9 @@
             document.getElementById("boss-hp-bar").style.width = `${hpPercent}%`;
         }
 
-        // 初始化 MediaPipe Pose
-        const pose = new Pose({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
-        });
-
-        pose.setOptions({
-            modelComplexity: 1,
-            smoothLandmarks: true,
-            enableSegmentation: false,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
-        });
-
-        pose.onResults(onResults);
-
-        // 啟動網路攝影機
-        const camera = new Camera(videoElement, {
-            onFrame: async () => {
-                await pose.send({ image: videoElement });
-            },
-            width: 640,
-            height: 480
-        });
-        camera.start();
-
+        // 啟動相機
+        startCamera();
         updateGameUI();
     </script>
 </body>
-</html>>
+</html>
