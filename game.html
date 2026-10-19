@@ -1,62 +1,208 @@
-// 遊戲狀態變數
-let gameState = {
-    level: 1,           // 當前關卡 (1, 2, 3)
-    currentReps: 0,     // 當前已完成次數
-    targetReps: 10,     // 當前關卡目標次數 (關卡1:10, 關卡2:20, 關卡3:30)
-    isSquatting: false  // 判斷下蹲狀態
-};
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>深蹲打怪挑戰 - 跑步與訓練平台</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
 
-// 關卡設定對應表
-const levelConfigs = {
-    1: { name: "第一關：小怪來襲", target: 10, monsterName: "史萊姆" },
-    2: { name: "第二關：中階護衛", target: 20, monsterName: "獸人戰士" },
-    3: { name: "第三關：深蹲大魔王", target: 30, monsterName: "遠古巨龍" }
-};
+        body {
+            background-color: #1a1a2e;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            padding: 1.5rem;
+        }
 
-// 當偵測到完成一次有效深蹲時觸發
-function onSquatCompleted() {
-    gameState.currentReps++;
-    console.log(`完成深蹲！當前進度: ${gameState.currentReps} / ${gameState.targetReps}`);
-    
-    // 更新畫面上魔王的血條與次數
-    updateGameUI();
+        header {
+            width: 100%;
+            max-width: 800px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
 
-    // 檢查是否達成當前關卡目標
-    if (gameState.currentReps >= gameState.targetReps) {
-        levelUp();
-    }
-}
+        .back-btn {
+            color: #3498db;
+            text-decoration: none;
+            font-size: 1rem;
+        }
 
-// 關卡推進邏輯
-function levelUp() {
-    if (gameState.level < 3) {
-        gameState.level++;
-        gameState.currentReps = 0; // 重置當前次數
-        gameState.targetReps = levelConfigs[gameState.level].target;
-        alert(`恭喜通關！進入 ${levelConfigs[gameState.level].name}，目標 ${gameState.targetReps} 下！`);
+        .back-btn:hover {
+            text-decoration: underline;
+        }
+
+        /* 遊戲面板容器 */
+        .game-container {
+            width: 100%;
+            max-width: 800px;
+            background: #162447;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+        }
+
+        /* 資訊面板 (血條與關卡) */
+        .hud {
+            margin-bottom: 1rem;
+            background: #1f4068;
+            padding: 1rem;
+            border-radius: 8px;
+        }
+
+        .hud h2 {
+            font-size: 1.4rem;
+            margin-bottom: 0.5rem;
+            color: #e43f5a;
+        }
+
+        .hud p {
+            font-size: 1.1rem;
+            margin-bottom: 0.8rem;
+        }
+
+        /* 血條外框 */
+        .hp-bar-container {
+            width: 100%;
+            height: 20px;
+            background-color: #333;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 2px solid #fff;
+        }
+
+        /* 血條內部動態填充 */
+        .hp-bar {
+            width: 100%;
+            height: 100%;
+            background-color: #2ecc71;
+            transition: width 0.3s ease;
+        }
+
+        /* 攝影機畫面區域 */
+        .video-box {
+            position: relative;
+            width: 100%;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 400px;
+        }
+
+        video, canvas {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <a href="./index.html" class="back-btn">← 返回會員首頁</a>
+        <h1>⚔️ 深蹲打怪挑戰</h1>
+    </header>
+
+    <div class="game-container">
+        <!-- 遊戲狀態 HUD -->
+        <div class="hud">
+            <h2 id="level-title">第一關：小怪來襲</h2>
+            <p id="monster-name">對手: 史萊姆</p>
+            <p>本關深蹲目標：<span id="rep-counter">0 / 10</span></p>
+            <div class="hp-bar-container">
+                <div id="boss-hp-bar" class="hp-bar"></div>
+            </div>
+        </div>
+
+        <!-- 視訊與遊戲畫面 -->
+        <div class="video-box">
+            <!-- 佔位畫面，後續可在此嵌入 MediaPipe 攝影機串流 -->
+            <video id="webcam" autoplay playsinline></video>
+            <canvas id="output-canvas"></canvas>
+            <div style="z-index: 10; text-align: center; color: #aaa;">
+                <p>（攝影機準備中... 點擊下方按鈕測試計數）</p>
+                <button onclick="onSquatCompleted()" style="padding: 10px 20px; margin-top: 10px; background: #e43f5a; color: white; border: none; border-radius: 5px; cursor: pointer;">模擬完成一下深蹲 (+1)</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 遊戲狀態變數
+        let gameState = {
+            level: 1,           
+            currentReps: 0,     
+            targetReps: 10,     
+            isSquatting: false  
+        };
+
+        // 關卡設定對應表
+        const levelConfigs = {
+            1: { name: "第一關：小怪來襲", target: 10, monsterName: "史萊姆" },
+            2: { name: "第二關：中階護衛", target: 20, monsterName: "獸人戰士" },
+            3: { name: "第三關：深蹲大魔王", target: 30, monsterName: "遠古巨龍" }
+        };
+
+        // 當偵測到完成一次有效深蹲時觸發
+        function onSquatCompleted() {
+            gameState.currentReps++;
+            console.log(`完成深蹲！當前進度: ${gameState.currentReps} / ${gameState.targetReps}`);
+            
+            updateGameUI();
+
+            if (gameState.currentReps >= gameState.targetReps) {
+                levelUp();
+            }
+        }
+
+        // 關卡推進邏輯
+        function levelUp() {
+            if (gameState.level < 3) {
+                gameState.level++;
+                gameState.currentReps = 0; 
+                gameState.targetReps = levelConfigs[gameState.level].target;
+                alert(`恭喜通關！進入 ${levelConfigs[gameState.level].name}，目標 ${gameState.targetReps} 下！`);
+                updateGameUI();
+            } else {
+                alert("🎉 太神啦！你成功擊敗了所有魔王，通關全遊戲！");
+                resetGame();
+            }
+        }
+
+        // 重置遊戲
+        function resetGame() {
+            gameState.level = 1;
+            gameState.currentReps = 0;
+            gameState.targetReps = levelConfigs[1].target;
+            updateGameUI();
+        }
+
+        // 更新網頁畫面顯示 (UI)
+        function updateGameUI() {
+            document.getElementById("level-title").innerText = levelConfigs[gameState.level].name;
+            document.getElementById("monster-name").innerText = `對手: ${levelConfigs[gameState.level].monsterName}`;
+            document.getElementById("rep-counter").innerText = `${gameState.currentReps} / ${gameState.targetReps}`;
+            
+            // 計算血條百分比 (從滿血遞減)
+            let hpPercent = ((gameState.targetReps - gameState.currentReps) / gameState.targetReps) * 100;
+            if (hpPercent < 0) hpPercent = 0;
+            document.getElementById("boss-hp-bar").style.width = `${hpPercent}%`;
+        }
+
+        // 初始化更新畫面
         updateGameUI();
-    } else {
-        alert("🎉 太神啦！你成功擊敗了所有魔王，通關全遊戲！");
-        // 可以在這裡觸發獲取小禮物/積分的邏輯
-        resetGame();
-    }
-}
-
-// 重置遊戲
-function resetGame() {
-    gameState.level = 1;
-    gameState.currentReps = 0;
-    gameState.targetReps = levelConfigs[1].target;
-    updateGameUI();
-}
-
-// 更新網頁畫面顯示 (UI)
-function updateGameUI() {
-    document.getElementById("level-title").innerText = levelConfigs[gameState.level].name;
-    document.getElementById("monster-name").innerText = `對手: ${levelConfigs[gameState.level].monsterName}`;
-    document.getElementById("rep-counter").innerText = `${gameState.currentReps} / ${gameState.targetReps}`;
-    
-    // 計算血條百分比
-    let hpPercent = ((gameState.targetReps - gameState.currentReps) / gameState.targetReps) * 100;
-    document.getElementById("boss-hp-bar").style.width = `${hpPercent}%`;
-}
+    </script>
+</body>
+</html>
