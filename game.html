@@ -110,7 +110,20 @@
             width: 100%;
             height: 100%;
             object-fit: cover;
-            transform: scaleX(-1); /* 鏡像翻轉，操作更直覺 */
+            transform: scaleX(-1); /* 鏡像翻轉 */
+        }
+
+        /* 畫面中間的怪獸圖示 */
+        .monster-avatar {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 5rem;
+            z-index: 5;
+            pointer-events: none;
+            transition: transform 0.1s ease;
+            filter: drop-shadow(0 0 10px rgba(255, 0, 0, 0.6));
         }
 
         .status-overlay {
@@ -137,10 +150,6 @@
             font-weight: bold;
             cursor: pointer;
         }
-
-        .start-btn:active {
-            background: #27ae60;
-        }
     </style>
 </head>
 <body>
@@ -154,8 +163,8 @@
         <!-- 遊戲狀態 HUD -->
         <div class="hud">
             <h2 id="level-title">第一關：小怪來襲</h2>
-            <p id="monster-name">對手: 史萊姆</p>
-            <p>本關深蹲目標：<span id="rep-counter">0 / 10</span></p>
+            <p id="monster-desc">對手: 史萊姆</p>
+            <p>本關深蹲目標：<span id="rep-counter">0 / 10</span> | 動作判定：<span id="hit-status" style="color: #f1c40f;">請對準怪獸並深蹲</span></p>
             <div class="hp-bar-container">
                 <div id="boss-hp-bar" class="hp-bar"></div>
             </div>
@@ -166,7 +175,10 @@
             <video id="webcam" autoplay playsinline></video>
             <canvas id="output-canvas"></canvas>
             
-            <!-- 覆蓋在上方的按鈕與狀態提示層 -->
+            <!-- 中間的怪獸圖示 -->
+            <div id="monster-icon" class="monster-avatar">🟢</div>
+
+            <!-- 啟動按鈕層 -->
             <div id="action-status" class="status-overlay">
                 <p id="status-text" style="font-size: 1.2rem; margin-bottom: 10px; color: #f1c40f;">請點擊下方按鈕以啟用相機</p>
                 <button class="start-btn" onclick="startCamera()">開啟相機並開始遊戲</button>
@@ -184,9 +196,9 @@
         };
 
         const levelConfigs = {
-            1: { name: "第一關：小怪來襲", target: 10, monsterName: "史萊姆" },
-            2: { name: "第二關：中階護衛", target: 20, monsterName: "獸人戰士" },
-            3: { name: "第三關：深蹲大魔王", target: 30, monsterName: "遠古巨龍" }
+            1: { name: "第一關：小怪來襲", target: 10, monsterName: "史萊姆", icon: "🟢" },
+            2: { name: "第二關：中階護衛", target: 20, monsterName: "獸人戰士", icon: "👹" },
+            3: { name: "第三關：深蹲大魔王", target: 30, monsterName: "遠古巨龍", icon: "🐉" }
         };
 
         const videoElement = document.getElementById('webcam');
@@ -194,6 +206,8 @@
         const canvasCtx = canvasElement.getContext('2d');
         const statusOverlay = document.getElementById('action-status');
         const statusText = document.getElementById('status-text');
+        const monsterIcon = document.getElementById('monster-icon');
+        const hitStatus = document.getElementById('hit-status');
 
         // 計算三點夾角
         function calculateAngle(a, b, c) {
@@ -222,7 +236,7 @@
             if (results.poseLandmarks) {
                 const landmarks = results.poseLandmarks;
 
-                // 繪製骨架
+                // 1. 繪製骨架
                 canvasCtx.lineWidth = 4;
                 canvasCtx.strokeStyle = '#00ffcc';
                 for (const connection of POSE_CONNECTIONS) {
@@ -245,23 +259,46 @@
                     }
                 }
 
-                // 深蹲判定
-                const hip = landmarks[24];
-                const knee = landmarks[26];
-                const ankle = landmarks[28];
+                // 2. 取得身體中間四個點（雙肩與雙骨盆）計算軀幹中心點
+                const leftShoulder = landmarks[11];
+                const rightShoulder = landmarks[12];
+                const leftHip = landmarks[23];
+                const rightHip = landmarks[24];
+                const rightKnee = landmarks[26];
+                const rightAnkle = landmarks[28];
 
-                if (hip && knee && ankle) {
-                    let kneeAngle = calculateAngle(hip, knee, ankle);
+                if (leftShoulder && rightShoulder && leftHip && rightHip && rightKnee && rightAnkle) {
+                    // 計算四點中心 (X, Y)
+                    let torsoCenterX = (leftShoulder.x + rightShoulder.x + leftHip.x + rightHip.x) / 4;
+                    let torsoCenterY = (leftShoulder.y + rightShoulder.y + leftHip.y + rightHip.y) / 4;
 
-                    if (kneeAngle > 160) {
-                        gameState.squatState = "UP";
-                    } else if (kneeAngle < 100 && gameState.squatState === "UP") {
-                        gameState.squatState = "DOWN";
-                    } else if (kneeAngle > 150 && gameState.squatState === "DOWN") {
-                        gameState.squatState = "UP";
-                        onSquatCompleted();
+                    // 條件 A：身體中心點是否在畫面中央區塊（怪獸附近，X介於 0.3~0.7，Y介於 0.2~0.8）
+                    let isTouchingMonster = (torsoCenterX > 0.3 && torsoCenterX < 0.7 && torsoCenterY > 0.2 && torsoCenterY < 0.8);
+
+                    // 條件 B：計算膝蓋角度 (小於 100 度代表深蹲到位)
+                    let kneeAngle = calculateAngle(rightHip, rightKnee, rightAnkle);
+
+                    if (isTouchingMonster) {
+                        if (kneeAngle > 160) {
+                            gameState.squatState = "UP";
+                            hitStatus.innerText = "位置正確！請向下深蹲";
+                            hitStatus.style.color = "#2ecc71";
+                        } else if (kneeAngle < 100 && gameState.squatState === "UP") {
+                            gameState.squatState = "DOWN";
+                            hitStatus.innerText = "好！站起來攻擊！";
+                            hitStatus.style.color = "#f1c40f";
+                        } else if (kneeAngle > 150 && gameState.squatState === "DOWN") {
+                            gameState.squatState = "UP";
+                            onSquatCompleted();
+                        }
+                    } else {
+                        hitStatus.innerText = "請移動身體靠近中央怪獸！";
+                        hitStatus.style.color = "#e74c3c";
                     }
                 }
+            } else {
+                hitStatus.innerText = "未偵測到身體，請站在鏡頭前";
+                hitStatus.style.color = "#e74c3c";
             }
             canvasCtx.restore();
         }
@@ -281,36 +318,20 @@
 
         pose.onResults(onResults);
 
-        // 啟動相機函式（綁定在按鈕上）
         async function startCamera() {
             try {
                 statusText.innerText = "正在請求相機權限...";
-                
-                // 檢查瀏覽器是否支援 getUserMedia
-                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                    throw new Error("此瀏覽器不支援相機存取功能 (getUserMedia)");
-                }
-
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { 
-                        facingMode: "user", 
-                        width: { ideal: 640 },
-                        height: { ideal: 480 }
-                    }
+                    video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }
                 });
-
                 videoElement.srcObject = stream;
-                
                 videoElement.onloadedmetadata = () => {
                     videoElement.play();
                     predictWebcam();
-                    // 成功後隱藏覆蓋的按鈕層
                     statusOverlay.style.display = "none";
                 };
-
             } catch (err) {
-                console.error("相機啟動失敗:", err);
-                statusText.innerHTML = `無法開啟相機！<br><span style="font-size:0.9rem; color:#e74c3c;">錯誤原因: ${err.message}</span><br>請確認網址為 HTTPS 且已允許相機權限。`;
+                statusText.innerHTML = `無法開啟相機！<br><span style="font-size:0.9rem; color:#e74c3c;">錯誤: ${err.message}</span>`;
             }
         }
 
@@ -325,6 +346,12 @@
             gameState.currentReps++;
             updateGameUI();
 
+            // 擊中特效：讓怪獸圖示稍微放大彈跳
+            monsterIcon.style.transform = "translate(-50%, -50%) scale(1.3)";
+            setTimeout(() => {
+                monsterIcon.style.transform = "translate(-50%, -50%) scale(1)";
+            }, 150);
+
             if (gameState.currentReps >= gameState.targetReps) {
                 levelUp();
             }
@@ -335,7 +362,12 @@
                 gameState.level++;
                 gameState.currentReps = 0; 
                 gameState.targetReps = levelConfigs[gameState.level].target;
-                alert(`恭喜通關！進入 ${levelConfigs[gameState.level].name}，目標 ${gameState.targetReps} 下！`);
+                
+                // 更換關卡怪獸圖示
+                monsterIcon.innerText = levelConfigs[gameState.level].icon;
+                document.getElementById("monster-desc").innerText = `對手: ${levelConfigs[gameState.level].monsterName}`;
+                
+                alert(`恭喜通關！進入 ${levelConfigs[gameState.level].name}！`);
                 updateGameUI();
             } else {
                 alert("🎉 太神啦！你成功擊敗了所有魔王，通關全遊戲！");
@@ -347,12 +379,13 @@
             gameState.level = 1;
             gameState.currentReps = 0;
             gameState.targetReps = levelConfigs[1].target;
+            monsterIcon.innerText = levelConfigs[1].icon;
+            document.getElementById("monster-desc").innerText = `對手: ${levelConfigs[1].monsterName}`;
             updateGameUI();
         }
 
         function updateGameUI() {
             document.getElementById("level-title").innerText = levelConfigs[gameState.level].name;
-            document.getElementById("monster-name").innerText = `對手: ${levelConfigs[gameState.level].monsterName}`;
             document.getElementById("rep-counter").innerText = `${gameState.currentReps} / ${gameState.targetReps}`;
             
             let hpPercent = ((gameState.targetReps - gameState.currentReps) / gameState.targetReps) * 100;
