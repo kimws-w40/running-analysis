@@ -47,10 +47,10 @@
 
         .game-container {
             width: 100%;
-            max-width: 100%;
+            max-width: 800px;
             background: #162447;
-            border-radius: 0;
-            padding: 1rem;
+            border-radius: 12px;
+            padding: 1.5rem;
             box-shadow: 0 8px 20px rgba(0,0,0,0.5);
         }
 
@@ -115,14 +115,31 @@
 
         .status-overlay {
             position: absolute;
-            bottom: 15px;
-            background: rgba(0, 0, 0, 0.75);
-            padding: 10px 20px;
-            border-radius: 20px;
-            font-size: 1.2rem;
-            font-weight: bold;
-            color: #f1c40f;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            text-align: center;
             z-index: 10;
+        }
+
+        .start-btn {
+            margin-top: 15px;
+            padding: 12px 24px;
+            background: #2ecc71;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .start-btn:active {
+            background: #27ae60;
         }
     </style>
 </head>
@@ -148,12 +165,14 @@
         <div class="video-box">
             <video id="webcam" autoplay playsinline></video>
             <canvas id="output-canvas"></canvas>
-            <!-- 加上一個明顯的啟動按鈕，解決手機自動阻擋的問題 -->
-            <div id="action-status" class="status-overlay" style="display: flex; flex-direction: column; align-items: center; gap: 10px;">
-                <span>請點擊下方按鈕以啟用相機</span>
-                <button onclick="startCamera()" style="padding: 10px 20px; background: #2ecc71; color: white; border: none; border-radius: 5px; font-size: 1rem; cursor: pointer; font-weight: bold;">開啟相機並開始遊戲</button>
+            
+            <!-- 覆蓋在上方的按鈕與狀態提示層 -->
+            <div id="action-status" class="status-overlay">
+                <p id="status-text" style="font-size: 1.2rem; margin-bottom: 10px; color: #f1c40f;">請點擊下方按鈕以啟用相機</p>
+                <button class="start-btn" onclick="startCamera()">開啟相機並開始遊戲</button>
             </div>
         </div>
+    </div>
 
     <script>
         // 遊戲狀態變數
@@ -161,7 +180,7 @@
             level: 1,           
             currentReps: 0,     
             targetReps: 10,     
-            squatState: "UP"    // 動作狀態機: "UP" (站立) 或 "DOWN" (下蹲)
+            squatState: "UP"    
         };
 
         const levelConfigs = {
@@ -173,9 +192,10 @@
         const videoElement = document.getElementById('webcam');
         const canvasElement = document.getElementById('output-canvas');
         const canvasCtx = canvasElement.getContext('2d');
-        const statusDisplay = document.getElementById('action-status');
+        const statusOverlay = document.getElementById('action-status');
+        const statusText = document.getElementById('status-text');
 
-        // 計算三點夾角的數學函式 (以膝蓋為頂點：髖、膝、踝)
+        // 計算三點夾角
         function calculateAngle(a, b, c) {
             let radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
             let angle = Math.abs(radians * 180.0 / Math.PI);
@@ -185,14 +205,12 @@
             return angle;
         }
 
-        // 定義身體骨架連線（讓畫面上能完整顯示骨架結構）
         const POSE_CONNECTIONS = [
-            [11, 12], [11, 23], [12, 24], [23, 24], // 軀幹
-            [11, 13], [13, 15], [12, 14], [14, 16], // 手臂
-            [23, 25], [25, 27], [24, 26], [26, 28]  // 腿部
+            [11, 12], [11, 23], [12, 24], [23, 24], 
+            [11, 13], [13, 15], [12, 14], [14, 16], 
+            [23, 25], [25, 27], [24, 26], [26, 28]  
         ];
 
-        // 當偵測到 MediaPipe 返回骨架結果時觸發
         function onResults(results) {
             canvasElement.width = videoElement.videoWidth || 640;
             canvasElement.height = videoElement.videoHeight || 480;
@@ -204,15 +222,12 @@
             if (results.poseLandmarks) {
                 const landmarks = results.poseLandmarks;
 
-                // 1. 繪製全身骨架連線
+                // 繪製骨架
                 canvasCtx.lineWidth = 4;
-                canvasCtx.strokeStyle = '#00ffcc'; // 青綠色骨架線
+                canvasCtx.strokeStyle = '#00ffcc';
                 for (const connection of POSE_CONNECTIONS) {
-                    const startIdx = connection[0];
-                    const endIdx = connection[1];
-                    const start = landmarks[startIdx];
-                    const end = landmarks[endIdx];
-
+                    const start = landmarks[connection[0]];
+                    const end = landmarks[connection[1]];
                     if (start && end && (start.visibility > 0.5 && end.visibility > 0.5)) {
                         canvasCtx.beginPath();
                         canvasCtx.moveTo(start.x * canvasElement.width, start.y * canvasElement.height);
@@ -221,8 +236,7 @@
                     }
                 }
 
-                // 2. 繪製關節點圓圈
-                canvasCtx.fillStyle = '#ff0055'; // 桃紅色關節點
+                canvasCtx.fillStyle = '#ff0055';
                 for (const landmark of landmarks) {
                     if (landmark.visibility > 0.5) {
                         canvasCtx.beginPath();
@@ -231,7 +245,7 @@
                     }
                 }
 
-                // 3. 深蹲判定邏輯 (以右側為例：右髖 24, 右膝 26, 右踝 28)
+                // 深蹲判定
                 const hip = landmarks[24];
                 const knee = landmarks[26];
                 const ankle = landmarks[28];
@@ -241,27 +255,18 @@
 
                     if (kneeAngle > 160) {
                         gameState.squatState = "UP";
-                        statusStatusUpdate("請下蹲 (UP)", "#2ecc71");
                     } else if (kneeAngle < 100 && gameState.squatState === "UP") {
                         gameState.squatState = "DOWN";
-                        statusStatusUpdate("好！站起來！(DOWN)", "#f1c40f");
                     } else if (kneeAngle > 150 && gameState.squatState === "DOWN") {
                         gameState.squatState = "UP";
                         onSquatCompleted();
                     }
                 }
-            } else {
-                statusStatusUpdate("未偵測到身體，請後退讓鏡頭拍到全身！", "#e74c3c");
             }
             canvasCtx.restore();
         }
 
-        function statusStatusUpdate(text, color) {
-            statusDisplay.innerText = text;
-            statusDisplay.style.color = color;
-        }
-
-        // 初始化 MediaPipe Pose
+        // 初始化 MediaPipe
         const pose = new Pose({
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
         });
@@ -276,32 +281,39 @@
 
         pose.onResults(onResults);
 
-        // 使用標準 Web API 啟動手機前鏡頭
-async function startCamera() {
-    try {
-        statusDisplay.innerHTML = "正在請求相機權限...";
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: { 
-                facingMode: "user", 
-                width: { ideal: 640 },
-                height: { ideal: 480 }
-            }
-        });
-        videoElement.srcObject = stream;
-        
-        videoElement.onloadedmetadata = () => {
-            videoElement.play();
-            predictWebcam();
-        };
-        // 成功啟動後隱藏按鈕提示框
-        statusDisplay.style.display = "none";
-    } catch (err) {
-        console.error("無法開啟相機: ", err);
-        statusDisplay.innerHTML = "無法存取相機！請確認已授權或網址為 HTTPS。<br><button onclick='startCamera()' style='margin-top:10px; padding:5px 10px;'>重試</button>";
-    }
-}
+        // 啟動相機函式（綁定在按鈕上）
+        async function startCamera() {
+            try {
+                statusText.innerText = "正在請求相機權限...";
+                
+                // 檢查瀏覽器是否支援 getUserMedia
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error("此瀏覽器不支援相機存取功能 (getUserMedia)");
+                }
 
-        // 循環偵測函數
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { 
+                        facingMode: "user", 
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
+                    }
+                });
+
+                videoElement.srcObject = stream;
+                
+                videoElement.onloadedmetadata = () => {
+                    videoElement.play();
+                    predictWebcam();
+                    // 成功後隱藏覆蓋的按鈕層
+                    statusOverlay.style.display = "none";
+                };
+
+            } catch (err) {
+                console.error("相機啟動失敗:", err);
+                statusText.innerHTML = `無法開啟相機！<br><span style="font-size:0.9rem; color:#e74c3c;">錯誤原因: ${err.message}</span><br>請確認網址為 HTTPS 且已允許相機權限。`;
+            }
+        }
+
         async function predictWebcam() {
             if (videoElement.readyState >= 2) {
                 await pose.send({ image: videoElement });
@@ -309,7 +321,6 @@ async function startCamera() {
             requestAnimationFrame(predictWebcam);
         }
 
-        // 完成一下深蹲的後續處理
         function onSquatCompleted() {
             gameState.currentReps++;
             updateGameUI();
@@ -319,7 +330,6 @@ async function startCamera() {
             }
         }
 
-        // 關卡推進
         function levelUp() {
             if (gameState.level < 3) {
                 gameState.level++;
@@ -340,19 +350,16 @@ async function startCamera() {
             updateGameUI();
         }
 
-        // 更新畫面 UI 與血條
         function updateGameUI() {
             document.getElementById("level-title").innerText = levelConfigs[gameState.level].name;
             document.getElementById("monster-name").innerText = `對手: ${levelConfigs[gameState.level].monsterName}`;
-            document.getElementById("rep-counter").innerText = `${gameState.currentReps} / `${gameState.targetReps};
+            document.getElementById("rep-counter").innerText = `${gameState.currentReps} / ${gameState.targetReps}`;
             
             let hpPercent = ((gameState.targetReps - gameState.currentReps) / gameState.targetReps) * 100;
             if (hpPercent < 0) hpPercent = 0;
             document.getElementById("boss-hp-bar").style.width = `${hpPercent}%`;
         }
 
-        // 啟動相機
-        startCamera();
         updateGameUI();
     </script>
 </body>
