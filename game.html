@@ -1,0 +1,62 @@
+// 遊戲狀態變數
+let gameState = {
+    level: 1,           // 當前關卡 (1, 2, 3)
+    currentReps: 0,     // 當前已完成次數
+    targetReps: 10,     // 當前關卡目標次數 (關卡1:10, 關卡2:20, 關卡3:30)
+    isSquatting: false  // 判斷下蹲狀態
+};
+
+// 關卡設定對應表
+const levelConfigs = {
+    1: { name: "第一關：小怪來襲", target: 10, monsterName: "史萊姆" },
+    2: { name: "第二關：中階護衛", target: 20, monsterName: "獸人戰士" },
+    3: { name: "第三關：深蹲大魔王", target: 30, monsterName: "遠古巨龍" }
+};
+
+// 當偵測到完成一次有效深蹲時觸發
+function onSquatCompleted() {
+    gameState.currentReps++;
+    console.log(`完成深蹲！當前進度: ${gameState.currentReps} / ${gameState.targetReps}`);
+    
+    // 更新畫面上魔王的血條與次數
+    updateGameUI();
+
+    // 檢查是否達成當前關卡目標
+    if (gameState.currentReps >= gameState.targetReps) {
+        levelUp();
+    }
+}
+
+// 關卡推進邏輯
+function levelUp() {
+    if (gameState.level < 3) {
+        gameState.level++;
+        gameState.currentReps = 0; // 重置當前次數
+        gameState.targetReps = levelConfigs[gameState.level].target;
+        alert(`恭喜通關！進入 ${levelConfigs[gameState.level].name}，目標 ${gameState.targetReps} 下！`);
+        updateGameUI();
+    } else {
+        alert("🎉 太神啦！你成功擊敗了所有魔王，通關全遊戲！");
+        // 可以在這裡觸發獲取小禮物/積分的邏輯
+        resetGame();
+    }
+}
+
+// 重置遊戲
+function resetGame() {
+    gameState.level = 1;
+    gameState.currentReps = 0;
+    gameState.targetReps = levelConfigs[1].target;
+    updateGameUI();
+}
+
+// 更新網頁畫面顯示 (UI)
+function updateGameUI() {
+    document.getElementById("level-title").innerText = levelConfigs[gameState.level].name;
+    document.getElementById("monster-name").innerText = `對手: ${levelConfigs[gameState.level].monsterName}`;
+    document.getElementById("rep-counter").innerText = `${gameState.currentReps} / ${gameState.targetReps}`;
+    
+    // 計算血條百分比
+    let hpPercent = ((gameState.targetReps - gameState.currentReps) / gameState.targetReps) * 100;
+    document.getElementById("boss-hp-bar").style.width = `${hpPercent}%`;
+}
