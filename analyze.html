@@ -126,11 +126,19 @@
     <h1>跑步矢狀面 (Sagittal) 5秒連續動作角度分析</h1>
   </header>
 
-  <div class="controls">
+<div class="controls">
     <label for="videoInput" class="btn">上傳影片檔</label>
     <input type="file" id="videoInput" accept="video/*" style="display:none">
     
     <button id="playPauseBtn" class="btn" style="background:#059669;">播放 / 暫停</button>
+
+    <!-- 重新加入的慢動作與播放速度選擇器 -->
+    <label for="speedSelect" style="margin-left: 10px;">播放速度：</label>
+    <select id="speedSelect" style="padding: 6px 12px; border-radius: 4px; background:#334155; color:#fff; border:none;">
+      <option value="1.0">正常速 (1.0x)</option>
+      <option value="0.5" selected>慢動作 (0.5x)</option>
+      <option value="0.25">超慢動作 (0.25x)</option>
+    </select>
 
     <label for="sideSelect" style="margin-left:auto;">分析側別：</label>
     <select id="sideSelect" style="padding: 6px 12px; border-radius: 4px; background:#334155; color:#fff; border:none;">
