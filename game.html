@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>深蹲打怪挑戰 - 跑步與訓練平台</title>
+    
+    <!-- 引入 MediaPipe Pose 必要的函式庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+
     <style>
         * {
             box-sizing: border-box;
@@ -41,7 +46,6 @@
             text-decoration: underline;
         }
 
-        /* 遊戲面板容器 */
         .game-container {
             width: 100%;
             max-width: 800px;
@@ -51,7 +55,6 @@
             box-shadow: 0 8px 20px rgba(0,0,0,0.5);
         }
 
-        /* 資訊面板 (血條與關卡) */
         .hud {
             margin-bottom: 1rem;
             background: #1f4068;
@@ -67,45 +70,59 @@
 
         .hud p {
             font-size: 1.1rem;
-            margin-bottom: 0.8rem;
+            margin-bottom: 0.5rem;
         }
 
-        /* 血條外框 */
         .hp-bar-container {
             width: 100%;
-            height: 20px;
+            height: 22px;
             background-color: #333;
-            border-radius: 10px;
+            border-radius: 11px;
             overflow: hidden;
             border: 2px solid #fff;
+            margin-top: 5px;
         }
 
-        /* 血條內部動態填充 */
         .hp-bar {
             width: 100%;
             height: 100%;
             background-color: #2ecc71;
-            transition: width 0.3s ease;
+            transition: width 0.2s ease;
         }
 
-        /* 攝影機畫面區域 */
+        /* 視訊與畫布容器 */
         .video-box {
             position: relative;
             width: 100%;
+            aspect-ratio: 4 / 3;
             background: #000;
             border-radius: 8px;
             overflow: hidden;
             display: flex;
             justify-content: center;
             align-items: center;
-            min-height: 400px;
         }
 
-        video, canvas {
-            position: absolute;
+        video {
+            display: none; /* 隱藏原生影片，改用 Canvas 繪製鏡頭與骨架 */
+        }
+
+        canvas {
             width: 100%;
             height: 100%;
             object-fit: cover;
+            transform: scaleX(-1); /* 鏡像翻轉，操作更直覺 */
+        }
+
+        .status-overlay {
+            position: absolute;
+            bottom: 15px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: #f1c40f;
         }
     </style>
 </head>
@@ -113,7 +130,7 @@
 
     <header>
         <a href="./index.html" class="back-btn">← 返回會員首頁</a>
-        <h1>⚔️ 深蹲打怪挑戰</h1>
+        <h1>⚔️ 深蹲打怪挑戰 (即時AI判定)</h1>
     </header>
 
     <div class="game-container">
@@ -121,7 +138,7 @@
         <div class="hud">
             <h2 id="level-title">第一關：小怪來襲</h2>
             <p id="monster-name">對手: 史萊姆</p>
-            <p>本關深蹲目標：<span id="rep-counter">0 / 10</span></p>
+            <p>本關深蹲目標：<span id="rep-counter">0 / 10</span> | 當前膝蓋角度：<span id="angle-display">--</span>°</p>
             <div class="hp-bar-container">
                 <div id="boss-hp-bar" class="hp-bar"></div>
             </div>
@@ -129,13 +146,9 @@
 
         <!-- 視訊與遊戲畫面 -->
         <div class="video-box">
-            <!-- 佔位畫面，後續可在此嵌入 MediaPipe 攝影機串流 -->
             <video id="webcam" autoplay playsinline></video>
             <canvas id="output-canvas"></canvas>
-            <div style="z-index: 10; text-align: center; color: #aaa;">
-                <p>（攝影機準備中... 點擊下方按鈕測試計數）</p>
-                <button onclick="onSquatCompleted()" style="padding: 10px 20px; margin-top: 10px; background: #e43f5a; color: white; border: none; border-radius: 5px; cursor: pointer;">模擬完成一下深蹲 (+1)</button>
-            </div>
+            <div id="action-status" class="status-overlay">請站到鏡頭前，準備深蹲！</div>
         </div>
     </div>
 
@@ -145,21 +158,87 @@
             level: 1,           
             currentReps: 0,     
             targetReps: 10,     
-            isSquatting: false  
+            squatState: "UP"    // 動作狀態機: "UP" (站立) 或 "DOWN" (下蹲)
         };
 
-        // 關卡設定對應表
         const levelConfigs = {
             1: { name: "第一關：小怪來襲", target: 10, monsterName: "史萊姆" },
             2: { name: "第二關：中階護衛", target: 20, monsterName: "獸人戰士" },
             3: { name: "第三關：深蹲大魔王", target: 30, monsterName: "遠古巨龍" }
         };
 
-        // 當偵測到完成一次有效深蹲時觸發
+        const videoElement = document.getElementById('webcam');
+        const canvasElement = document.getElementById('output-canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const statusDisplay = document.getElementById('action-status');
+        const angleDisplay = document.getElementById('angle-display');
+
+        // 計算三點夾角的數學函式 (以膝蓋為頂點：髖、膝、踝)
+        function calculateAngle(a, b, c) {
+            let radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
+            let angle = Math.abs(radians * 180.0 / Math.PI);
+            if (angle > 180.0) {
+                angle = 360.0 - angle;
+            }
+            return angle;
+        }
+
+        // 當偵測到 MediaPipe 返回骨架結果時觸發
+        function onResults(results) {
+            canvasElement.width = videoElement.videoWidth;
+            canvasElement.height = videoElement.videoHeight;
+
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            if (results.poseLandmarks) {
+                // 取得身體右側或左側關節 (這裡以右側為例：右髖 24, 右膝 26, 右踝 28)
+                const landmarks = results.poseLandmarks;
+                const hip = landmarks[24];
+                const knee = landmarks[26];
+                const ankle = landmarks[28];
+
+                if (hip && knee && ankle) {
+                    // 計算膝關節夾角
+                    let kneeAngle = calculateAngle(hip, knee, ankle);
+                    angleDisplay.innerText = Math.round(kneeAngle);
+
+                    // 繪製關節點與骨架連線（簡化版視覺化）
+                    canvasCtx.fillStyle = "#e43f5a";
+                    canvasCtx.strokeStyle = "#2ecc71";
+                    canvasCtx.lineWidth = 4;
+
+                    // 畫出膝蓋圓點
+                    let kneeX = knee.x * canvasElement.width;
+                    let kneeY = knee.y * canvasElement.height;
+                    canvasCtx.beginPath();
+                    canvasCtx.arc(kneeX, kneeY, 10, 0, 2 * Math.PI);
+                    canvasCtx.fill();
+
+                    // --- 深蹲狀態機與自動扣血判定邏輯 ---
+                    if (kneeAngle > 160) {
+                        gameState.squatState = "UP";
+                        statusDisplay.innerText = "請下蹲 (UP)";
+                        statusDisplay.style.color = "#2ecc71";
+                    } else if (kneeAngle < 100 && gameState.squatState === "UP") {
+                        // 從站立進入下蹲
+                        gameState.squatState = "DOWN";
+                        statusDisplay.innerText = "好！站起來！(DOWN)";
+                        statusDisplay.style.color = "#f1c40f";
+                    } else if (kneeAngle > 150 && gameState.squatState === "DOWN") {
+                        // 從下蹲站回站立，判定完成一下有效深蹲！
+                        gameState.squatState = "UP";
+                        onSquatCompleted();
+                    }
+                }
+            }
+            canvasCtx.restore();
+        }
+
+        // 完成一下深蹲的後續處理
         function onSquatCompleted() {
             gameState.currentReps++;
-            console.log(`完成深蹲！當前進度: ${gameState.currentReps} / ${gameState.targetReps}`);
-            
             updateGameUI();
 
             if (gameState.currentReps >= gameState.targetReps) {
@@ -167,7 +246,7 @@
             }
         }
 
-        // 關卡推進邏輯
+        // 關卡推進
         function levelUp() {
             if (gameState.level < 3) {
                 gameState.level++;
@@ -181,7 +260,6 @@
             }
         }
 
-        // 重置遊戲
         function resetGame() {
             gameState.level = 1;
             gameState.currentReps = 0;
@@ -189,20 +267,43 @@
             updateGameUI();
         }
 
-        // 更新網頁畫面顯示 (UI)
+        // 更新畫面 UI 與血條
         function updateGameUI() {
             document.getElementById("level-title").innerText = levelConfigs[gameState.level].name;
             document.getElementById("monster-name").innerText = `對手: ${levelConfigs[gameState.level].monsterName}`;
             document.getElementById("rep-counter").innerText = `${gameState.currentReps} / ${gameState.targetReps}`;
             
-            // 計算血條百分比 (從滿血遞減)
             let hpPercent = ((gameState.targetReps - gameState.currentReps) / gameState.targetReps) * 100;
             if (hpPercent < 0) hpPercent = 0;
             document.getElementById("boss-hp-bar").style.width = `${hpPercent}%`;
         }
 
-        // 初始化更新畫面
+        // 初始化 MediaPipe Pose
+        const pose = new Pose({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+        });
+
+        pose.setOptions({
+            modelComplexity: 1,
+            smoothLandmarks: true,
+            enableSegmentation: false,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        pose.onResults(onResults);
+
+        // 啟動網路攝影機
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await pose.send({ image: videoElement });
+            },
+            width: 640,
+            height: 480
+        });
+        camera.start();
+
         updateGameUI();
     </script>
 </body>
-</html>
+</html>>
