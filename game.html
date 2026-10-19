@@ -148,9 +148,12 @@
         <div class="video-box">
             <video id="webcam" autoplay playsinline></video>
             <canvas id="output-canvas"></canvas>
-            <div id="action-status" class="status-overlay">正在請求相機權限...</div>
+            <!-- 加上一個明顯的啟動按鈕，解決手機自動阻擋的問題 -->
+            <div id="action-status" class="status-overlay" style="display: flex; flex-direction: column; align-items: center; gap: 10px;">
+                <span>請點擊下方按鈕以啟用相機</span>
+                <button onclick="startCamera()" style="padding: 10px 20px; background: #2ecc71; color: white; border: none; border-radius: 5px; font-size: 1rem; cursor: pointer; font-weight: bold;">開啟相機並開始遊戲</button>
+            </div>
         </div>
-    </div>
 
     <script>
         // 遊戲狀態變數
@@ -274,27 +277,29 @@
         pose.onResults(onResults);
 
         // 使用標準 Web API 啟動手機前鏡頭
-        async function startCamera() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { 
-                        facingMode: "user", 
-                        width: { ideal: 640 },
-                        height: { ideal: 480 }
-                    }
-                });
-                videoElement.srcObject = stream;
-                
-                videoElement.onloadedmetadata = () => {
-                    videoElement.play();
-                    predictWebcam();
-                };
-                statusDisplay.innerText = "相機已啟動，請站到鏡頭前！";
-            } catch (err) {
-                console.error("無法開啟相機: ", err);
-                statusDisplay.innerText = "無法存取相機，請檢查權限或確認網址為 HTTPS！";
+async function startCamera() {
+    try {
+        statusDisplay.innerHTML = "正在請求相機權限...";
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { 
+                facingMode: "user", 
+                width: { ideal: 640 },
+                height: { ideal: 480 }
             }
-        }
+        });
+        videoElement.srcObject = stream;
+        
+        videoElement.onloadedmetadata = () => {
+            videoElement.play();
+            predictWebcam();
+        };
+        // 成功啟動後隱藏按鈕提示框
+        statusDisplay.style.display = "none";
+    } catch (err) {
+        console.error("無法開啟相機: ", err);
+        statusDisplay.innerHTML = "無法存取相機！請確認已授權或網址為 HTTPS。<br><button onclick='startCamera()' style='margin-top:10px; padding:5px 10px;'>重試</button>";
+    }
+}
 
         // 循環偵測函數
         async function predictWebcam() {
